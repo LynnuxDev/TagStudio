@@ -3,6 +3,7 @@ node_modules
 dist
 data
 
+ecosystem.config.js
 **/*.db
 result
 .env

@@ -31,11 +31,15 @@
 
           configurePhase = ''
             export HOME=$TMPDIR
+            export COREPACK_ENABLE_STRICT=0
+            export COREPACK_ENABLE=0
             pnpm install --frozen-lockfile
           '';
 
           buildPhase = ''
             export HOME=$TMPDIR
+            export COREPACK_ENABLE_STRICT=0
+            export COREPACK_ENABLE=0
             pnpm build
           '';
 

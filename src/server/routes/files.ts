@@ -1,0 +1,524 @@
+import { Hono } from 'hono'
+import fs from 'fs/promises'
+import { createReadStream, existsSync, mkdirSync } from 'fs'
+import path from 'path'
+import crypto from 'crypto'
+import { execFile, spawn } from 'child_process'
+import { promisify } from 'util'
+import { Readable } from 'stream'
+import db from '../db'
+
+const execFileAsync = promisify(execFile)
+
+const files = new Hono()
+
+const ROOT = process.env.ROOT || '/mnt/other/DATA'
+
+files.get('/', async (c) => {
+  const queryPath = c.req.query('path')
+  const dirPath = queryPath ? path.resolve(queryPath) : ROOT
+
+  // Prevent going outside of ROOT
+  if (!dirPath.startsWith(ROOT)) {
+    return c.json({ error: 'Access denied' }, 403)
+  }
+
+  try {
+    await fs.access(dirPath)
+  } catch {
+    return c.json({ error: 'Directory not found' }, 404)
+  }
+
+  const showHidden = c.req.query('showHidden') === 'true'
+
+  try {
+    let entries = await fs.readdir(dirPath, { withFileTypes: true })
+    if (!showHidden) {
+      entries = entries.filter(e => !e.name.startsWith('.'))
+    }
+    const contents = await Promise.all(
+      entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name)
+        let stat
+        try {
+          stat = await fs.stat(fullPath)
+        } catch {
+          return null
+        }
+
+        const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(fullPath) as { metadata: string } | undefined
+        let metadata: Record<string, unknown> = {}
+        if (row) {
+          try { metadata = JSON.parse(row.metadata) } catch { }
+        }
+
+        const ext = path.extname(entry.name).toLowerCase()
+
+        return {
+          name: entry.name,
+          path: fullPath,
+          isDirectory: entry.isDirectory(),
+          size: stat.size,
+          modified: stat.mtime.toISOString(),
+          created: stat.birthtime.toISOString(),
+          extension: ext,
+          mode: stat.mode,
+          metadata,
+        }
+      })
+    )
+
+    return c.json({
+      path: dirPath,
+      parent: dirPath !== ROOT ? path.dirname(dirPath) : null,
+      contents: contents.filter(Boolean),
+      root: ROOT,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return c.json({ error: message }, 500)
+  }
+})
+
+files.get('/info', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) {
+    return c.json({ error: 'Access denied' }, 403)
+  }
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  try {
+    const stat = await fs.stat(filePath)
+    const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string } | undefined
+    let metadata: Record<string, unknown> = {}
+    if (row) {
+      try { metadata = JSON.parse(row.metadata) } catch { }
+    }
+
+    const ext = path.extname(filePath).toLowerCase()
+
+    return c.json({
+      name: path.basename(filePath),
+      path: filePath,
+      isDirectory: stat.isDirectory(),
+      size: stat.size,
+      modified: stat.mtime.toISOString(),
+      created: stat.birthtime.toISOString(),
+      extension: ext,
+      mode: stat.mode,
+      metadata,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return c.json({ error: message }, 500)
+  }
+})
+
+files.get('/raw', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) {
+    return c.json({ error: 'Access denied' }, 403)
+  }
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  const ext = path.extname(filePath).toLowerCase()
+  let contentType = 'application/octet-stream'
+  if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg'
+  else if (ext === '.png') contentType = 'image/png'
+  else if (ext === '.gif') contentType = 'image/gif'
+  else if (ext === '.webp') contentType = 'image/webp'
+  else if (ext === '.svg') contentType = 'image/svg+xml'
+
+  c.header('Content-Type', contentType)
+  const fileStream = createReadStream(filePath)
+  return c.body(Readable.toWeb(fileStream) as ReadableStream)
+})
+
+files.get('/read-text', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    const stat = await fs.stat(filePath)
+    const MAX_SIZE = 100 * 1024
+    if (stat.size > MAX_SIZE) {
+      return c.json({ error: 'File too large', size: stat.size, maxSize: MAX_SIZE })
+    }
+    const content = await fs.readFile(filePath, 'utf-8')
+    return c.json({ content })
+  } catch {
+    return c.json({ error: 'Failed to read file' }, 500)
+  }
+})
+
+files.put('/write-text', async (c) => {
+  const body = await c.req.json() as { path?: string; content?: string }
+  const filePathQuery = body.path
+  const content = body.content
+  if (!filePathQuery || content === undefined) return c.json({ error: 'path and content required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    const stat = await fs.stat(filePath)
+    const MAX_SIZE = 100 * 1024
+    if (stat.size > MAX_SIZE) {
+      return c.json({ error: 'File too large to write', size: stat.size, maxSize: MAX_SIZE }, 413)
+    }
+    await fs.writeFile(filePath, content, 'utf-8')
+    return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to write file' }, 500)
+  }
+})
+
+files.get('/thumbnail', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  const thumbDir = path.join(path.dirname(filePath), '.ts')
+  const hash = crypto.createHash('md5').update(filePath).digest('hex')
+  const thumbPath = path.join(thumbDir, `${hash}.webp`)
+
+  if (!existsSync(thumbPath)) {
+    try {
+      await fs.stat(filePath)
+    } catch {
+      return c.json({ error: 'File not found' }, 404)
+    }
+
+    if (!existsSync(thumbDir)) {
+      mkdirSync(thumbDir, { recursive: true })
+    }
+
+    try {
+      const durationSec = 30
+      const seek = Math.max(1, Math.floor(Math.random() * Math.min(durationSec, 10)))
+      await execFileAsync('ffmpeg', [
+        '-ss', String(seek),
+        '-i', filePath,
+        '-vframes', '1',
+        '-vf', 'scale=320:-1',
+        '-q:v', '50',
+        '-y',
+        thumbPath,
+      ], { timeout: 30000 })
+    } catch {
+      return c.json({ error: 'Failed to generate thumbnail' }, 500)
+    }
+  }
+
+  c.header('Content-Type', 'image/webp')
+
+  const stream = createReadStream(thumbPath)
+  return c.body(Readable.toWeb(stream) as ReadableStream)
+})
+
+async function listZipFiles(filePath: string): Promise<string[]> {
+  const buffer = await fs.readFile(filePath)
+  const filesList: string[] = []
+
+  // 1. Search for EOCD signature (0x06054b50) from the end of the file
+  let eocdOffset = -1
+  for (let i = buffer.length - 22; i >= 0; i--) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+
+  if (eocdOffset === -1) {
+    throw new Error('Not a valid ZIP file (EOCD signature not found)')
+  }
+
+  // 2. Read Central Directory info from EOCD
+  const totalRecords = buffer.readUInt16LE(eocdOffset + 10)
+  const cdOffset = buffer.readUInt32LE(eocdOffset + 16)
+
+  // 3. Parse Central Directory headers
+  let offset = cdOffset
+  for (let r = 0; r < totalRecords; r++) {
+    if (offset + 46 > buffer.length) break
+    const signature = buffer.readUInt32LE(offset)
+    if (signature !== 0x02014b50) {
+      break
+    }
+
+    const fileNameLength = buffer.readUInt16LE(offset + 28)
+    const extraFieldLength = buffer.readUInt16LE(offset + 30)
+    const commentLength = buffer.readUInt16LE(offset + 32)
+
+    if (offset + 46 + fileNameLength > buffer.length) break
+    const fileName = buffer.toString('utf8', offset + 46, offset + 46 + fileNameLength)
+    if (fileName) {
+      filesList.push(fileName)
+    }
+
+    offset += 46 + fileNameLength + extraFieldLength + commentLength
+  }
+
+  return filesList
+}
+
+files.get('/archive/list', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) {
+    return c.json({ error: 'Access denied' }, 403)
+  }
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  try {
+    const fileList = await listZipFiles(filePath)
+    return c.json({ files: fileList })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to parse archive'
+    return c.json({ error: msg }, 500)
+  }
+})
+
+files.post('/create-folder', async (c) => {
+  const body = await c.req.json() as { parentPath?: string; name?: string }
+  const parentPath = body.parentPath
+  const name = body.name
+  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
+
+  const resolved = path.resolve(parentPath)
+  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
+
+  const target = path.join(resolved, name)
+  try {
+    await fs.mkdir(target, { recursive: false })
+    return c.json({ path: target })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to create folder' }, 500)
+  }
+})
+
+files.post('/create-file', async (c) => {
+  const body = await c.req.json() as { parentPath?: string; name?: string }
+  const parentPath = body.parentPath
+  const name = body.name
+  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
+
+  const resolved = path.resolve(parentPath)
+  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
+
+  const target = path.join(resolved, name)
+  try {
+    await fs.writeFile(target, '', 'utf-8')
+    return c.json({ path: target })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to create file' }, 500)
+  }
+})
+
+files.delete('/delete', async (c) => {
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    const stat = await fs.stat(filePath)
+    if (stat.isDirectory()) {
+      await fs.rm(filePath, { recursive: true, force: true })
+    } else {
+      await fs.unlink(filePath)
+    }
+    db.prepare('DELETE FROM file_metadata WHERE path = ?').run(filePath)
+    return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to delete' }, 500)
+  }
+})
+
+files.post('/rename', async (c) => {
+  const body = await c.req.json() as { path?: string; name?: string }
+  const filePath = body.path
+  const newName = body.name
+  if (!filePath || !newName) return c.json({ error: 'path and name required' }, 400)
+  if (newName.includes('/') || newName.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
+
+  const resolved = path.resolve(filePath)
+  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(resolved)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  const newPath = path.join(path.dirname(resolved), newName)
+  if (existsSync(newPath)) return c.json({ error: 'Destination already exists' }, 409)
+
+  try {
+    await fs.rename(resolved, newPath)
+    const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(resolved) as { metadata: string } | undefined
+    if (row) {
+      db.prepare('DELETE FROM file_metadata WHERE path = ?').run(resolved)
+      db.prepare('INSERT OR REPLACE INTO file_metadata (path, metadata) VALUES (?, ?)').run(newPath, row.metadata)
+    }
+    return c.json({ path: newPath })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to rename' }, 500)
+  }
+})
+
+files.post('/move', async (c) => {
+  const body = await c.req.json() as { source?: string; destination?: string }
+  const { source, destination } = body
+  if (!source || !destination) return c.json({ error: 'source and destination required' }, 400)
+
+  const srcPath = path.resolve(source)
+  const dstPath = path.resolve(destination)
+  if (!srcPath.startsWith(ROOT) || !dstPath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(srcPath)
+  } catch {
+    return c.json({ error: 'Source not found' }, 404)
+  }
+
+  if (existsSync(dstPath)) return c.json({ error: 'Destination already exists' }, 409)
+
+  const dstDir = path.dirname(dstPath)
+  try {
+    await fs.access(dstDir)
+  } catch {
+    return c.json({ error: 'Destination directory does not exist' }, 404)
+  }
+
+  try {
+    await fs.rename(srcPath, dstPath)
+
+    // update file_metadata in DB
+    const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(srcPath) as { metadata: string } | undefined
+    if (row) {
+      db.prepare('DELETE FROM file_metadata WHERE path = ?').run(srcPath)
+      db.prepare('INSERT OR REPLACE INTO file_metadata (path, metadata) VALUES (?, ?)').run(dstPath, row.metadata)
+    }
+
+    // move thumbnail cache if it exists
+    const srcThumbDir = path.join(path.dirname(srcPath), '.ts')
+    const srcHash = crypto.createHash('md5').update(srcPath).digest('hex')
+    const srcThumb = path.join(srcThumbDir, `${srcHash}.webp`)
+    if (existsSync(srcThumb)) {
+      const dstThumbDir = path.join(path.dirname(dstPath), '.ts')
+      const dstHash = crypto.createHash('md5').update(dstPath).digest('hex')
+      const dstThumb = path.join(dstThumbDir, `${dstHash}.webp`)
+      if (!existsSync(dstThumbDir)) mkdirSync(dstThumbDir, { recursive: true })
+      await fs.rename(srcThumb, dstThumb)
+    }
+
+    return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to move' }, 500)
+  }
+})
+
+files.post('/open-with/mpv', async (c) => {
+  const body = await c.req.json() as { path?: string }
+  const filePathQuery = body.path
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  spawn('mpv', [filePath], {
+    detached: true,
+    stdio: 'ignore',
+  }).unref()
+
+  return c.json({ success: true })
+})
+
+files.post('/open-with/yacreader', async (c) => {
+  const body = await c.req.json() as { path?: string }
+  const filePathQuery = body.path
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  spawn('YACReader', [filePath], { detached: true, stdio: 'ignore' }).unref()
+
+  return c.json({ success: true })
+})
+
+files.post('/extract', async (c) => {
+  const body = await c.req.json() as { path?: string }
+  const filePathQuery = body.path
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(filePath)
+  } catch {
+    return c.json({ error: 'File not found' }, 404)
+  }
+
+  const outDir = path.join(path.dirname(filePath), path.basename(filePath, path.extname(filePath)))
+
+  try {
+    await fs.mkdir(outDir, { recursive: true })
+  } catch {
+    return c.json({ error: 'Failed to create output directory' }, 500)
+  }
+
+  try {
+    await execFileAsync('7z', ['x', filePath, `-o${outDir}`, '-y'], { timeout: 120000 })
+    return c.json({ success: true, output: outDir })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to extract archive' }, 500)
+  }
+})
+
+export default files

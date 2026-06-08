@@ -26,5 +26,5 @@ services:
       - PORT=3000
       - DATA_DIR=/data
       - BASE_URL=http://localhost:3000
-      - BETTER_AUTH_SECRET=change-me-to-a-random-string
+      - BETTER_AUTH_SECRET=ddPJ3YL1Ow338DxvO7/3Sl+PQdBCh9a5Cyl57EgvKgQ=
       - NODE_ENV=production

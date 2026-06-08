@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { SearchResult } from '../types'
+import { useApiContext } from '../hooks/ApiContext'
 
 const COMMON_EXTENSIONS = [
   '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
@@ -30,7 +31,7 @@ export default function SearchBar({ onSearchResult, onClearSearch, isSearching, 
   const [tagInput, setTagInput] = useState('')
   const [showTagDropdown, setShowTagDropdown] = useState(false)
 
-  const { search, getTags } = (window as any).__api__()
+  const { search, getTags } = useApiContext()
   const extRef = useRef<HTMLDivElement>(null)
   const tagDropRef = useRef<HTMLDivElement>(null)
 

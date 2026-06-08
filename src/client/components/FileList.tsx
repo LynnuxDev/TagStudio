@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FileEntry, DirListing } from '../types'
+import { useApiContext } from '../hooks/ApiContext'
 
 const BATCH_SIZE = 50
 
@@ -45,7 +46,7 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
   const [moveBrowserDirs, setMoveBrowserDirs] = useState<FileEntry[]>([])
   const [moveBrowserLoading, setMoveBrowserLoading] = useState(false)
 
-  const { listDir, createFolder, createFile, deleteFile, renameFile, moveFile, extractArchive, openWithYacreader } = (window as any).__api__()
+  const { listDir, createFolder, createFile, deleteFile, renameFile, moveFile, extractArchive, openWithYacreader } = useApiContext()
 
   const fetchDir = useCallback(async () => {
     setLoading(true)

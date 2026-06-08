@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import path from 'path'
 import db from '../db'
+import { isWithinRoot } from '../utils/path'
 
 const ROOT = process.env.ROOT || '/mnt/other/DATA'
 
@@ -10,7 +11,7 @@ metadata.use('*', async (c, next) => {
   const filePathQuery = c.req.query('path')
   if (filePathQuery) {
     const resolvedPath = path.resolve(filePathQuery)
-    if (!resolvedPath.startsWith(ROOT)) {
+    if (!isWithinRoot(ROOT, resolvedPath)) {
       return c.json({ error: 'Access denied' }, 403)
     }
   }

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useApiContext } from '../hooks/ApiContext'
 
 interface LoginProps {
   onAuth: () => void
 }
 
 export default function Login({ onAuth }: LoginProps) {
+  const { signIn, signUp } = useApiContext()
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -20,8 +22,6 @@ export default function Login({ onAuth }: LoginProps) {
       })
       .catch(() => {})
   }, [])
-
-  const { signIn, signUp } = (window as any).__api__()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

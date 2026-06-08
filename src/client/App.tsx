@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useApi } from './hooks/useApi'
+import { useApiContext } from './hooks/ApiContext'
 import type { User, FileEntry, SearchResult } from './types'
 import Login from './components/Login'
 import FileList from './components/FileList'
@@ -7,8 +7,6 @@ import MetadataPanel from './components/MetadataPanel'
 import SearchBar from './components/SearchBar'
 import Breadcrumb from './components/Breadcrumb'
 import Settings, { applyTheme } from './components/Settings'
-
-(window as any).__api__ = useApi
 
 type View = 'browse' | 'settings'
 
@@ -26,7 +24,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [currentFiles, setCurrentFiles] = useState<FileEntry[]>([])
 
-  const api = useApi()
+  const api = useApiContext()
 
   useEffect(() => {
     api.getSession()

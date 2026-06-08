@@ -1,20 +1,21 @@
 {
   "name": "tagger",
   "version": "1.0.0",
-  "description": "",
+  "description": "Metadata file manager web app",
   "main": "index.js",
   "scripts": {
     "dev:server": "tsx watch -r @dotenvx/dotenvx/config src/server/index.ts",
     "dev:client": "vite",
     "dev": "concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
     "build:client": "vite build",
-    "build": "pnpm build:client",
-    "start": "NODE_ENV=production pnpm build:client && tsx -r @dotenvx/dotenvx/config src/server/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "pnpm build:client && pnpm build:server",
+    "start": "NODE_ENV=production node --import @dotenvx/dotenvx/config dist/server/index.js",
+    "test": "tsx --test tests/**/*.test.ts"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Lynnux",
+  "license": "Unlicense",
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@better-auth/kysely-adapter": "^1.6.14",

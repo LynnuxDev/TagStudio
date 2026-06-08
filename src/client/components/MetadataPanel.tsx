@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import type { FileEntry, MetadataResponse } from '../types'
 import type { InfoRow } from '../fileInfoProviders'
 import { getExtraRows } from '../fileInfoProviders'
+import { useApiContext } from '../hooks/ApiContext'
 
 interface MetadataPanelProps {
   file: FileEntry | null
@@ -170,7 +171,7 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
     setLightbox(null)
   }
 
-  const { getMetadata, patchMetadata, deleteMetadataKey, addTags, removeTag, getArchiveList, saveTextFile, openWithMpv } = (window as any).__api__()
+  const { getMetadata, patchMetadata, deleteMetadataKey, addTags, removeTag, getArchiveList, saveTextFile, openWithMpv } = useApiContext()
 
   useEffect(() => {
     if (file) {

@@ -7,6 +7,7 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { Readable } from 'stream'
 import db from '../db'
+import { isWithinRoot } from '../utils/path'
 
 const execFileAsync = promisify(execFile)
 
@@ -14,12 +15,15 @@ const files = new Hono()
 
 const ROOT = process.env.ROOT || '/mnt/other/DATA'
 
+function checkAccess(target: string): boolean {
+  return isWithinRoot(ROOT, target)
+}
+
 files.get('/', async (c) => {
   const queryPath = c.req.query('path')
   const dirPath = queryPath ? path.resolve(queryPath) : ROOT
 
-  // Prevent going outside of ROOT
-  if (!dirPath.startsWith(ROOT)) {
+  if (!checkAccess(dirPath)) {
     return c.json({ error: 'Access denied' }, 403)
   }
 
@@ -85,7 +89,7 @@ files.get('/info', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) {
+  if (!checkAccess(filePath)) {
     return c.json({ error: 'Access denied' }, 403)
   }
 
@@ -127,7 +131,7 @@ files.get('/raw', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) {
+  if (!checkAccess(filePath)) {
     return c.json({ error: 'Access denied' }, 403)
   }
 
@@ -155,7 +159,7 @@ files.get('/read-text', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     const stat = await fs.stat(filePath)
@@ -177,7 +181,7 @@ files.put('/write-text', async (c) => {
   if (!filePathQuery || content === undefined) return c.json({ error: 'path and content required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     const stat = await fs.stat(filePath)
@@ -197,7 +201,7 @@ files.get('/thumbnail', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   const thumbDir = path.join(path.dirname(filePath), '.ts')
   const hash = crypto.createHash('md5').update(filePath).digest('hex')
@@ -288,7 +292,7 @@ files.get('/archive/list', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) {
+  if (!checkAccess(filePath)) {
     return c.json({ error: 'Access denied' }, 403)
   }
 
@@ -314,7 +318,7 @@ files.post('/create-folder', async (c) => {
   if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
 
   const resolved = path.resolve(parentPath)
-  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
   if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
 
   const target = path.join(resolved, name)
@@ -333,7 +337,7 @@ files.post('/create-file', async (c) => {
   if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
 
   const resolved = path.resolve(parentPath)
-  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
   if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
 
   const target = path.join(resolved, name)
@@ -350,7 +354,7 @@ files.delete('/delete', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     const stat = await fs.stat(filePath)
@@ -374,7 +378,7 @@ files.post('/rename', async (c) => {
   if (newName.includes('/') || newName.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
 
   const resolved = path.resolve(filePath)
-  if (!resolved.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     await fs.access(resolved)
@@ -405,7 +409,7 @@ files.post('/move', async (c) => {
 
   const srcPath = path.resolve(source)
   const dstPath = path.resolve(destination)
-  if (!srcPath.startsWith(ROOT) || !dstPath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(srcPath) || !checkAccess(dstPath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     await fs.access(srcPath)
@@ -425,14 +429,12 @@ files.post('/move', async (c) => {
   try {
     await fs.rename(srcPath, dstPath)
 
-    // update file_metadata in DB
     const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(srcPath) as { metadata: string } | undefined
     if (row) {
       db.prepare('DELETE FROM file_metadata WHERE path = ?').run(srcPath)
       db.prepare('INSERT OR REPLACE INTO file_metadata (path, metadata) VALUES (?, ?)').run(dstPath, row.metadata)
     }
 
-    // move thumbnail cache if it exists
     const srcThumbDir = path.join(path.dirname(srcPath), '.ts')
     const srcHash = crypto.createHash('md5').update(srcPath).digest('hex')
     const srcThumb = path.join(srcThumbDir, `${srcHash}.webp`)
@@ -456,7 +458,7 @@ files.post('/open-with/mpv', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     await fs.access(filePath)
@@ -478,7 +480,7 @@ files.post('/open-with/yacreader', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     await fs.access(filePath)
@@ -497,7 +499,7 @@ files.post('/extract', async (c) => {
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
   const filePath = path.resolve(filePathQuery)
-  if (!filePath.startsWith(ROOT)) return c.json({ error: 'Access denied' }, 403)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
     await fs.access(filePath)

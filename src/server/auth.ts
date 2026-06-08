@@ -14,18 +14,20 @@ const sqliteDialect = new SqliteDialect({
   database: new Database(path.join(DATA_DIR, 'tagger.db')),
 })
 
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
+
 export const auth = betterAuth({
   database: {
     dialect: sqliteDialect,
     type: 'sqlite',
   },
-  baseURL: 'http://localhost:3000/api/auth',
+  baseURL: `${BASE_URL}/api/auth`,
   emailAndPassword: {
     enabled: true,
   },
   trustedOrigins: process.env.NODE_ENV === 'development'
     ? ['http://localhost:5173', 'http://localhost:3000']
-    : [process.env.ORIGIN || 'http://localhost:3000'],
+    : [BASE_URL],
 })
 
 auth.$context.then(ctx => ctx.runMigrations()).catch(console.error)

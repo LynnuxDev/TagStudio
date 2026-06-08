@@ -1,0 +1,15 @@
+node_modules
+dist
+data
+.env
+.env.keys
+.git
+.gitignore
+*.md
+.vscode
+.agents
+.direnv
+.envrc
+flake.nix
+flake.lock
+tests

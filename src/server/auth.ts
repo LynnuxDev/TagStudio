@@ -30,4 +30,7 @@ export const auth = betterAuth({
     : [BASE_URL],
 })
 
-auth.$context.then(ctx => ctx.runMigrations()).catch(console.error)
+export const authReady = auth.$context
+  .then(ctx => ctx.runMigrations())
+  .then(() => { console.log('Auth ready — migrations complete') })
+  .catch(err => { console.error('Auth initialization failed:', err); throw err })

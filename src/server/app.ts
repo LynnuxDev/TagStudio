@@ -41,6 +41,11 @@ app.use("*", async (c, next) => {
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
+app.get("/api/auth/setup-status", (c) => {
+  const row = db.prepare("SELECT COUNT(*) as count FROM user").get() as { count: number } | undefined;
+  return c.json({ needsSetup: !row || row.count === 0 });
+});
+
 app.use(
   "/api/*",
   rateLimiter({

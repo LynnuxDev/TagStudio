@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useApiContext } from './hooks/ApiContext'
 import type { User, FileEntry, SearchResult } from './types'
 import Login from './components/Login'
+import Setup from './components/Setup'
 import FileList from './components/FileList'
 import MetadataPanel from './components/MetadataPanel'
 import SearchBar from './components/SearchBar'
@@ -13,6 +14,7 @@ type View = 'browse' | 'settings'
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [needsSetup, setNeedsSetup] = useState(false)
   const [view, setView] = useState<View>('browse')
   const [currentPath, setCurrentPath] = useState('')
   const [rootPath, setRootPath] = useState('')
@@ -27,12 +29,23 @@ export default function App() {
   const api = useApiContext()
 
   useEffect(() => {
-    api.getSession()
-      .then((session) => {
-        if (session?.user) setUser(session.user)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    (async () => {
+      try {
+        const [setupStatus, session] = await Promise.all([
+          fetch('/api/auth/setup-status', { credentials: 'include' }).then(r => r.json()),
+          api.getSession(),
+        ])
+        if (setupStatus.needsSetup) {
+          setNeedsSetup(true)
+        } else if (session?.user) {
+          setUser(session.user)
+        }
+      } catch {
+        // If either fails, proceed to login
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [])
 
   useEffect(() => {
@@ -52,6 +65,11 @@ export default function App() {
     const session = await api.getSession()
     if (session?.user) setUser(session.user)
   }, [])
+
+  const handleSetupComplete = useCallback(() => {
+    setNeedsSetup(false)
+    handleAuth()
+  }, [handleAuth])
 
   const handleLogout = async () => {
     await api.signOut()
@@ -96,6 +114,7 @@ export default function App() {
   }
 
   if (loading) return <div className="app-loading">Loading...</div>
+  if (needsSetup) return <Setup onComplete={handleSetupComplete} />
   if (!user) return <Login onAuth={handleAuth} />
 
   if (view === 'settings') {

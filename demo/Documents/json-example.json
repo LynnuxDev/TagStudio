@@ -1,0 +1,31 @@
+{
+  "user": {
+    "id": 10492,
+    "username": "demo_user",
+    "active": true,
+    "roles": ["viewer", "editor"]
+  },
+  "device": {
+    "os": "Linux",
+    "version": "6.5.0",
+    "browser": "Firefox",
+    "screen": {
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "files": [
+    { "name": "photo.jpg", "size": 1250000, "type": "image" },
+    { "name": "notes.txt", "size": 3400, "type": "text" },
+    { "name": "archive.zip", "size": 540000, "type": "archive" }
+  ],
+  "settings": {
+    "theme": "dark",
+    "notifications": true,
+    "autoSave": false
+  },
+  "logs": [
+    { "event": "login", "timestamp": "2026-06-08T10:12:00Z" },
+    { "event": "open_file", "timestamp": "2026-06-08T10:15:42Z" }
+  ]
+}

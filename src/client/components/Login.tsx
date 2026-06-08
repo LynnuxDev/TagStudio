@@ -41,7 +41,7 @@ export default function Login({ onAuth }: LoginProps) {
   return (
     <div className="login-container">
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1>Tagger</h1>
+        <h1>TagStudio</h1>
         <p className="login-subtitle">Metadata File Manager</p>
         {isSignUp && (
           <input

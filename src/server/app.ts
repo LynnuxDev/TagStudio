@@ -99,7 +99,7 @@ app.notFound((c) => {
     return c.json({ error: "Not found" }, 404);
   }
   return c.html(
-    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Tagger</title></head><body><div id="root"></div><script type="module" src="/src/client/main.tsx"></script></body></html>',
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>TagStudio</title></head><body><div id="root"></div><script type="module" src="/src/client/main.tsx"></script></body></html>',
     404,
   );
 });

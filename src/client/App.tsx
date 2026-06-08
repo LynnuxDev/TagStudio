@@ -119,7 +119,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-left">
-          <h1 className="app-title">Tagger</h1>
+          <h1 className="app-title">TagStudio</h1>
           <SearchBar
             onSearchResult={handleSearchResults}
             onClearSearch={handleClearSearch}

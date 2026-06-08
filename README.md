@@ -1,6 +1,6 @@
-# Tagger
+# TagStudio
 
-Metadata file manager — browse, tag, search, and manage files through a web UI.
+Tagged file browser and metadata manager — browse, tag, search, and organize files through a web UI.
 
 ## Prerequisites
 

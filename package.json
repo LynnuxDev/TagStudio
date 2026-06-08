@@ -1,7 +1,7 @@
 {
-  "name": "tagger",
+  "name": "tagstudio",
   "version": "1.0.0",
-  "description": "Metadata file manager web app",
+  "description": "Tagged file browser and metadata manager",
   "main": "index.js",
   "scripts": {
     "dev:server": "tsx watch -r @dotenvx/dotenvx/config src/server/index.ts",

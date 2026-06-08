@@ -1,5 +1,5 @@
 {
-  description = "Tagger - Metadata file manager";
+  description = "TagStudio - Tagged file browser and metadata manager";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -69,7 +69,7 @@
           ];
 
           shellHook = ''
-            echo " Tagger dev environment"
+            echo " TagStudio dev environment"
             echo "   node : $(node --version)"
             echo "   pnpm : $(pnpm --version)"
             echo ""

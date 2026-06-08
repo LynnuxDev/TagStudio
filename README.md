@@ -39,7 +39,7 @@ cp .env.example .env   # (create one from the template below)
 Example `.env`:
 
 ```
-ROOT=/path/to/your/files
+ROOT=/host
 PORT=3000
 BASE_URL=http://localhost:3000
 DATA_DIR=./data

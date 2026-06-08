@@ -651,6 +651,17 @@ button:hover {
   background: var(--bg-surface);
 }
 
+.root-error {
+  padding: 12px 16px;
+  margin: 8px;
+  background: var(--danger-bg, #3b1a1a);
+  border: 1px solid var(--danger, #e74c3c);
+  border-radius: 6px;
+  color: var(--danger, #e74c3c);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .metadata-panel {
   padding: 20px;
 }

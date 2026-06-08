@@ -25,6 +25,7 @@ export default function App() {
   const [showHiddenFiles, setShowHiddenFiles] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [currentFiles, setCurrentFiles] = useState<FileEntry[]>([])
+  const [rootError, setRootError] = useState('')
 
   const api = useApiContext()
 
@@ -47,6 +48,16 @@ export default function App() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/files/root-status', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.valid) setRootError(data.error || 'Root directory is not accessible')
+      })
+      .catch(() => setRootError('Failed to check root directory'))
+  }, [user])
 
   useEffect(() => {
     fetch('/api/users/settings', { credentials: 'include' })
@@ -231,6 +242,7 @@ export default function App() {
         </div>
 
         <aside className="side-panel">
+          {rootError && <div className="root-error">{rootError}</div>}
           <MetadataPanel file={selectedFile} onUpdate={handleMetadataUpdate} onNavigateMedia={handleNavigateMedia} />
         </aside>
       </div>

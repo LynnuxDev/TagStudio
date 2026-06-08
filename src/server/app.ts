@@ -83,7 +83,10 @@ const requireAuth = async (c: any, next: any) => {
   return next();
 };
 
-app.use("/api/files/*", requireAuth);
+app.use("/api/files/*", async (c: any, next: any) => {
+  if (c.req.path === "/api/files/root-status") return next()
+  return requireAuth(c, next)
+});
 app.use("/api/metadata/*", requireAuth);
 app.use("/api/search/*", requireAuth);
 app.use("/api/users/*", async (c: any, next: any) => {

@@ -8,9 +8,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS base
 
 WORKDIR /app
 
-RUN groupadd -g 1001 -r nodejs && \
-    useradd -r -u 1001 -g nodejs -d /app -s /sbin/nologin nodejs
-
+# Use the existing node user (uid 1000) from the base image
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 # ========================================
@@ -23,7 +21,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --prod
 
-RUN chown -R nodejs:nodejs /app/node_modules
+RUN chown -R node:node /app/node_modules
 
 # ========================================
 # Build Dependencies Stage (all deps)
@@ -43,14 +41,14 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
-RUN chown -R nodejs:nodejs /app/node_modules
+RUN chown -R node:node /app/node_modules
 
 # ========================================
 # Build Stage
 # ========================================
 FROM build-deps AS build
 
-COPY --chown=nodejs:nodejs . .
+COPY --chown=node:node . .
 
 RUN pnpm build
 
@@ -61,9 +59,9 @@ FROM build-deps AS development
 
 ENV NODE_ENV=development
 
-COPY --chown=nodejs:nodejs . .
+COPY --chown=node:node . .
 
-USER nodejs
+USER node
 
 EXPOSE 3000 5173 9229
 
@@ -82,19 +80,16 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-RUN groupadd -g 1001 -r nodejs && \
-    useradd -r -u 1001 -g nodejs -d /app -s /sbin/nologin nodejs
-
 ENV NODE_ENV=production \
     NODE_OPTIONS="--max-old-space-size=256 --no-warnings"
 
-COPY --from=deps --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --from=deps --chown=nodejs:nodejs /app/package.json ./
-COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=deps --chown=node:node /app/package.json ./
+COPY --from=build --chown=node:node /app/dist ./dist
 
-RUN mkdir -p /data && chown -R nodejs:nodejs /data
+RUN mkdir -p /data && chown node:node /data
 
-USER nodejs
+USER node
 
 EXPOSE 3000
 
@@ -107,8 +102,8 @@ FROM build-deps AS test
 
 ENV NODE_ENV=test
 
-COPY --chown=nodejs:nodejs . .
+COPY --chown=node:node . .
 
-USER nodejs
+USER node
 
 CMD ["pnpm", "test"]

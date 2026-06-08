@@ -19,18 +19,21 @@ function checkAccess(target: string): boolean {
   return isWithinRoot(ROOT, target)
 }
 
+files.get('/root-status', async (c) => {
+  try {
+    await fs.access(ROOT, fs.constants.R_OK)
+    return c.json({ valid: true, path: ROOT })
+  } catch {
+    return c.json({ valid: false, path: ROOT, error: `Root directory does not exist or is not accessible: ${ROOT}` })
+  }
+})
+
 files.get('/', async (c) => {
   const queryPath = c.req.query('path')
   const dirPath = queryPath ? path.resolve(queryPath) : ROOT
 
   if (!checkAccess(dirPath)) {
     return c.json({ error: 'Access denied' }, 403)
-  }
-
-  try {
-    await fs.access(dirPath)
-  } catch {
-    return c.json({ error: 'Directory not found' }, 404)
   }
 
   const showHidden = c.req.query('showHidden') === 'true'
@@ -78,9 +81,10 @@ files.get('/', async (c) => {
       contents: contents.filter(Boolean),
       root: ROOT,
     })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return c.json({ error: message }, 500)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
+    return c.json({ error: err.message || 'Unknown error' }, 500)
   }
 })
 
@@ -91,12 +95,6 @@ files.get('/info', async (c) => {
   const filePath = path.resolve(filePathQuery)
   if (!checkAccess(filePath)) {
     return c.json({ error: 'Access denied' }, 403)
-  }
-
-  try {
-    await fs.access(filePath)
-  } catch {
-    return c.json({ error: 'File not found' }, 404)
   }
 
   try {
@@ -120,9 +118,10 @@ files.get('/info', async (c) => {
       mode: stat.mode,
       metadata,
     })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return c.json({ error: message }, 500)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
+    return c.json({ error: err.message || 'Unknown error' }, 500)
   }
 })
 
@@ -136,9 +135,11 @@ files.get('/raw', async (c) => {
   }
 
   try {
-    await fs.access(filePath)
-  } catch {
-    return c.json({ error: 'File not found' }, 404)
+    await fs.access(filePath, fs.constants.R_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
+    return c.json({ error: err.message || 'Unknown error' }, 500)
   }
 
   const ext = path.extname(filePath).toLowerCase()
@@ -297,59 +298,24 @@ files.get('/archive/list', async (c) => {
   }
 
   try {
-    await fs.access(filePath)
-  } catch {
+    await fs.access(filePath, fs.constants.R_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'File not found' }, 404)
   }
 
   try {
     const fileList = await listZipFiles(filePath)
     return c.json({ files: fileList })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to parse archive'
-    return c.json({ error: msg }, 500)
-  }
-})
-
-files.post('/create-folder', async (c) => {
-  const body = await c.req.json() as { parentPath?: string; name?: string }
-  const parentPath = body.parentPath
-  const name = body.name
-  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
-
-  const resolved = path.resolve(parentPath)
-  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
-  if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
-
-  const target = path.join(resolved, name)
-  try {
-    await fs.mkdir(target, { recursive: false })
-    return c.json({ path: target })
   } catch (err: any) {
-    return c.json({ error: err.message || 'Failed to create folder' }, 500)
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
+    return c.json({ error: err.message || 'Unknown error' }, 500)
   }
 })
 
-files.post('/create-file', async (c) => {
-  const body = await c.req.json() as { parentPath?: string; name?: string }
-  const parentPath = body.parentPath
-  const name = body.name
-  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
-
-  const resolved = path.resolve(parentPath)
-  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
-  if (name.includes('/') || name.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
-
-  const target = path.join(resolved, name)
-  try {
-    await fs.writeFile(target, '', 'utf-8')
-    return c.json({ path: target })
-  } catch (err: any) {
-    return c.json({ error: err.message || 'Failed to create file' }, 500)
-  }
-})
-
-files.delete('/delete', async (c) => {
+files.get('/read-text', async (c) => {
   const filePathQuery = c.req.query('path')
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
@@ -381,8 +347,10 @@ files.post('/rename', async (c) => {
   if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
 
   try {
-    await fs.access(resolved)
-  } catch {
+    await fs.access(resolved, fs.constants.W_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'File not found' }, 404)
   }
 
@@ -413,7 +381,9 @@ files.post('/move', async (c) => {
 
   try {
     await fs.access(srcPath)
-  } catch {
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'Source not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'Source not found' }, 404)
   }
 
@@ -421,8 +391,10 @@ files.post('/move', async (c) => {
 
   const dstDir = path.dirname(dstPath)
   try {
-    await fs.access(dstDir)
-  } catch {
+    await fs.access(dstDir, fs.constants.W_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'Destination directory does not exist' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'Destination directory does not exist' }, 404)
   }
 
@@ -461,8 +433,10 @@ files.post('/open-with/mpv', async (c) => {
   if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
-    await fs.access(filePath)
-  } catch {
+    await fs.access(filePath, fs.constants.R_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'File not found' }, 404)
   }
 
@@ -483,8 +457,10 @@ files.post('/open-with/yacreader', async (c) => {
   if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
-    await fs.access(filePath)
-  } catch {
+    await fs.access(filePath, fs.constants.R_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'File not found' }, 404)
   }
 
@@ -502,8 +478,10 @@ files.post('/extract', async (c) => {
   if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
 
   try {
-    await fs.access(filePath)
-  } catch {
+    await fs.access(filePath, fs.constants.R_OK)
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    if (err.code === 'EACCES' || err.code === 'EPERM') return c.json({ error: 'Permission denied' }, 403)
     return c.json({ error: 'File not found' }, 404)
   }
 

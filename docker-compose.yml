@@ -1,6 +1,13 @@
+# ========================================
+# Docker Compose Configuration
+# Node.js Application
+# ========================================
+
 services:
   tagger:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: tagger
     restart: unless-stopped
     ports:
@@ -13,4 +20,5 @@ services:
       - PORT=3000
       - DATA_DIR=/data
       - BASE_URL=http://localhost:3000
+      - BETTER_AUTH_SECRET=change-me-to-a-random-string
       - NODE_ENV=production

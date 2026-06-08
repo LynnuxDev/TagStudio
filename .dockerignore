@@ -1,15 +1,39 @@
-node_modules
-dist
-data
-.env
-.env.keys
-.git
+# Version control
+.git/
+.github/
 .gitignore
-*.md
-.vscode
-.agents
+
+# Dependencies (installed in container)
+node_modules/
+
+# Build outputs (built in container)
+dist/
+
+# Environment files
+.env*
 .direnv
 .envrc
 flake.nix
 flake.lock
+
+# Development files
+.vscode/
+*.log
+coverage/
+.eslintcache
+.agents
+
+# Documentation
+*.md
+docs/
+
+# Database
+data
+
+# tests
 tests
+
+# Non-essential configs (keep build configs)
+*.config.js
+!vite.config.ts
+!tsconfig.json

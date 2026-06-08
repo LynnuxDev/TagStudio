@@ -1,6 +1,34 @@
-FROM node:22-bookworm-slim AS build
+# ========================================
+# Optimized Multi-Stage Dockerfile
+# Node.js TypeScript Application
+# ========================================
 
-RUN npm install -g pnpm@10
+ARG NODE_VERSION=22.22.3
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+
+WORKDIR /app
+
+RUN groupadd -g 1001 -r nodejs && \
+    useradd -r -u 1001 -g nodejs -d /app -s /sbin/nologin nodejs
+
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+# ========================================
+# Dependencies Stage (production only)
+# ========================================
+FROM base AS deps
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile --prod
+
+RUN chown -R nodejs:nodejs /app/node_modules
+
+# ========================================
+# Build Dependencies Stage (all deps)
+# ========================================
+FROM base AS build-deps
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -10,14 +38,41 @@ RUN apt-get update && \
       make \
       && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.json tsconfig.server.json vite.config.ts index.html ./
-COPY src/ ./src/
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile
+
+RUN chown -R nodejs:nodejs /app/node_modules
+
+# ========================================
+# Build Stage
+# ========================================
+FROM build-deps AS build
+
+COPY --chown=nodejs:nodejs . .
+
 RUN pnpm build
 
-FROM node:22-bookworm-slim
+# ========================================
+# Development Stage
+# ========================================
+FROM build-deps AS development
+
+ENV NODE_ENV=development
+
+COPY --chown=nodejs:nodejs . .
+
+USER nodejs
+
+EXPOSE 3000 5173 9229
+
+CMD ["pnpm", "dev"]
+
+# ========================================
+# Production Stage
+# ========================================
+FROM node:${NODE_VERSION}-bookworm-slim AS production
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -25,25 +80,35 @@ RUN apt-get update && \
       p7zip-full \
       && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -r tagger && useradd -r -g tagger -d /app -s /sbin/nologin tagger
-
 WORKDIR /app
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
+RUN groupadd -g 1001 -r nodejs && \
+    useradd -r -u 1001 -g nodejs -d /app -s /sbin/nologin nodejs
 
-RUN npm install -g pnpm@10 && \
-    pnpm install --frozen-lockfile --prod && \
-    rm -rf /root/.local/share/pnpm
+ENV NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=256 --no-warnings"
 
-RUN mkdir -p /data && chown tagger:tagger /data
+COPY --from=deps --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=nodejs:nodejs /app/package.json ./
+COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
 
-USER tagger
+RUN mkdir -p /data && chown -R nodejs:nodejs /data
+
+USER nodejs
 
 EXPOSE 3000
 
-ENV NODE_ENV=production \
-    DATA_DIR=/data \
-    PORT=3000
-
 CMD ["node", "dist/server/index.js"]
+
+# ========================================
+# Test Stage
+# ========================================
+FROM build-deps AS test
+
+ENV NODE_ENV=test
+
+COPY --chown=nodejs:nodejs . .
+
+USER nodejs
+
+CMD ["pnpm", "test"]

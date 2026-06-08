@@ -146,8 +146,9 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
   const [textSaving, setTextSaving] = useState(false)
   const [mediaInfo, setMediaInfo] = useState<{ width?: number; height?: number; duration?: number }>({})
 
-  const isImage = file ? /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name) : false
+  const isImage = file ? /\.(jpg|jpeg|png|gif|webp|svg|tiff?|ico)$/i.test(file.name) : false
   const isVideo = file ? /\.(mp4|mov|webm|avi|mkv|wmv|flv)$/i.test(file.name) : false
+  const isAudio = file ? /\.(mp3|wav|flac|ogg|m4a|aac|opus|wma)$/i.test(file.name) : false
   const isZip = file ? /\.zip$/i.test(file.name) : false
   const isText = file ? /\.(txt|md|json|xml|yaml|yml|csv|log|sh|js|ts|py|rb|html|css|cfg|ini|conf|env|toml|lock|sql|r|go|rs|java|c|cpp|h|hpp|mermaid)$/i.test(file.name) : false
 
@@ -220,16 +221,16 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
       const img = new Image()
       img.onload = () => setMediaInfo({ width: img.naturalWidth, height: img.naturalHeight })
       img.src = `/api/files/raw?path=${encodeURIComponent(file.path)}`
-    } else if (file && isVideo) {
-      const video = document.createElement('video')
-      video.preload = 'metadata'
-      video.onloadedmetadata = () => {
-        setMediaInfo({ duration: video.duration })
-        video.src = ''
+    } else if (file && (isVideo || isAudio)) {
+      const el = document.createElement(isAudio ? 'audio' : 'video')
+      el.preload = 'metadata'
+      el.onloadedmetadata = () => {
+        setMediaInfo({ duration: el.duration })
+        el.src = ''
       }
-      video.src = `/api/files/raw?path=${encodeURIComponent(file.path)}`
+      el.src = `/api/files/raw?path=${encodeURIComponent(file.path)}`
     }
-  }, [file, isZip, isText, isImage, isVideo])
+  }, [file, isZip, isText, isImage, isVideo, isAudio])
 
   useEffect(() => {
     if (!lightbox) return
@@ -399,7 +400,7 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
         )}
       </div>
 
-      {(isImage || isVideo) && (
+      {(isImage || isVideo || isAudio) && (
         <div className="preview-section media-preview">
           <h4>Preview</h4>
           {isImage ? (
@@ -409,7 +410,7 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
               className="sidebar-preview-image"
               onClick={() => openLightbox('image', `/api/files/raw?path=${encodeURIComponent(file.path)}`)}
             />
-          ) : (
+          ) : isVideo ? (
             <>
               <img
                 src={`/api/files/thumbnail?path=${encodeURIComponent(file.path)}`}
@@ -421,6 +422,13 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
                 ▶ Open with mpv
               </button>
             </>
+          ) : (
+            <audio
+              src={`/api/files/raw?path=${encodeURIComponent(file.path)}`}
+              className="sidebar-audio-player"
+              controls
+              preload="metadata"
+            />
           )}
         </div>
       )}

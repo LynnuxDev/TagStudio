@@ -26,20 +26,25 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [currentFiles, setCurrentFiles] = useState<FileEntry[]>([])
   const [rootError, setRootError] = useState('')
+  const [isDemo, setIsDemo] = useState(false)
 
   const api = useApiContext()
 
   useEffect(() => {
     (async () => {
       try {
-        const [setupStatus, session] = await Promise.all([
-          fetch('/api/auth/setup-status', { credentials: 'include' }).then(r => r.json()),
-          api.getSession(),
-        ])
-        if (setupStatus.needsSetup) {
+        const setupStatus = await fetch('/api/auth/setup-status', { credentials: 'include' }).then(r => r.json())
+        if (setupStatus.demo) {
+          setIsDemo(true)
+          setUser({ id: 'demo', email: 'demo@tagger.app', name: 'Demo User' })
+          setNeedsSetup(false)
+        } else if (setupStatus.needsSetup) {
           setNeedsSetup(true)
-        } else if (session?.user) {
-          setUser(session.user)
+        } else {
+          const session = await api.getSession()
+          if (session?.user) {
+            setUser(session.user)
+          }
         }
       } catch {
         // If either fails, proceed to login
@@ -83,6 +88,7 @@ export default function App() {
   }, [handleAuth])
 
   const handleLogout = async () => {
+    if (isDemo) return
     await api.signOut()
     setUser(null)
     setSelectedFile(null)
@@ -158,9 +164,15 @@ export default function App() {
           />
         </div>
         <div className="header-right">
-          <span className="user-email">{user.name || user.email}</span>
+          {isDemo ? (
+            <span className="demo-badge">Demo</span>
+          ) : (
+            <>
+              <span className="user-email">{user.name || user.email}</span>
+              <button className="logout-btn" onClick={handleLogout}>Logout</button>
+            </>
+          )}
           <button className="settings-btn" onClick={() => setView('settings')} title="Settings">&#9881;</button>
-          <button className="logout-btn" onClick={handleLogout}>Logout</button>
         </div>
       </header>
 
@@ -179,7 +191,7 @@ export default function App() {
                 <div className="file-grid-body">
                   {searchResults.map((r) => {
                     const name = r.path.split('/').pop() || r.path
-                    const isImageFile = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name)
+                    const isImageFile = /\.(jpg|jpeg|png|gif|webp|svg|tiff?|ico)$/i.test(name)
                     return (
                       <div
                         key={r.path}

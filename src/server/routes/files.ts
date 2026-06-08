@@ -13,7 +13,11 @@ const execFileAsync = promisify(execFile)
 
 const files = new Hono()
 
-const ROOT = process.env.ROOT || '/mnt/other/DATA'
+const isDemo = process.env.NODE_ENV === "demo"
+const readonly = isDemo && process.env.ALLOW_EDITS_IN_DEMO !== "true"
+const ROOT = isDemo
+  ? path.resolve(process.cwd(), "demo")
+  : (process.env.ROOT || '/mnt/other/DATA')
 
 function checkAccess(target: string): boolean {
   return isWithinRoot(ROOT, target)
@@ -80,6 +84,7 @@ files.get('/', async (c) => {
       parent: dirPath !== ROOT ? path.dirname(dirPath) : null,
       contents: contents.filter(Boolean),
       root: ROOT,
+      ...(isDemo ? { displayRoot: "/home/demo" } : {}),
     })
   } catch (err: any) {
     if (err.code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404)
@@ -149,6 +154,16 @@ files.get('/raw', async (c) => {
   else if (ext === '.gif') contentType = 'image/gif'
   else if (ext === '.webp') contentType = 'image/webp'
   else if (ext === '.svg') contentType = 'image/svg+xml'
+  else if (ext === '.tiff' || ext === '.tif') contentType = 'image/tiff'
+  else if (ext === '.ico') contentType = 'image/x-icon'
+  else if (ext === '.mp3') contentType = 'audio/mpeg'
+  else if (ext === '.wav') contentType = 'audio/wav'
+  else if (ext === '.flac') contentType = 'audio/flac'
+  else if (ext === '.ogg') contentType = 'audio/ogg'
+  else if (ext === '.m4a') contentType = 'audio/mp4'
+  else if (ext === '.aac') contentType = 'audio/aac'
+  else if (ext === '.opus') contentType = 'audio/opus'
+  else if (ext === '.wma') contentType = 'audio/x-ms-wma'
 
   c.header('Content-Type', contentType)
   const fileStream = createReadStream(filePath)
@@ -176,6 +191,7 @@ files.get('/read-text', async (c) => {
 })
 
 files.put('/write-text', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { path?: string; content?: string }
   const filePathQuery = body.path
   const content = body.content
@@ -316,6 +332,7 @@ files.get('/archive/list', async (c) => {
 })
 
 files.get('/read-text', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePathQuery = c.req.query('path')
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
 
@@ -336,7 +353,77 @@ files.get('/read-text', async (c) => {
   }
 })
 
+files.delete('/delete', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
+  const filePathQuery = c.req.query('path')
+  if (!filePathQuery) return c.json({ error: 'path required' }, 400)
+
+  const filePath = path.resolve(filePathQuery)
+  if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    const stat = await fs.stat(filePath)
+    if (stat.isDirectory()) {
+      await fs.rm(filePath, { recursive: true, force: true })
+    } else {
+      await fs.unlink(filePath)
+    }
+    db.prepare('DELETE FROM file_metadata WHERE path = ?').run(filePath)
+    return c.json({ success: true })
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+    return c.json({ error: err.message || 'Failed to delete' }, 500)
+  }
+})
+
+files.post('/create-folder', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
+  const body = await c.req.json() as { parentPath?: string; name?: string }
+  const parentPath = body.parentPath
+  const name = body.name
+  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
+
+  const resolved = path.resolve(parentPath, name)
+  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(resolved)
+    return c.json({ error: 'Already exists' }, 409)
+  } catch { /* doesn't exist, good */ }
+
+  try {
+    await fs.mkdir(resolved, { recursive: false })
+    return c.json({ path: resolved })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to create folder' }, 500)
+  }
+})
+
+files.post('/create-file', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
+  const body = await c.req.json() as { parentPath?: string; name?: string }
+  const parentPath = body.parentPath
+  const name = body.name
+  if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
+
+  const resolved = path.resolve(parentPath, name)
+  if (!checkAccess(resolved)) return c.json({ error: 'Access denied' }, 403)
+
+  try {
+    await fs.access(resolved)
+    return c.json({ error: 'Already exists' }, 409)
+  } catch { /* doesn't exist, good */ }
+
+  try {
+    await fs.writeFile(resolved, '', 'utf-8')
+    return c.json({ path: resolved })
+  } catch (err: any) {
+    return c.json({ error: err.message || 'Failed to create file' }, 500)
+  }
+})
+
 files.post('/rename', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { path?: string; name?: string }
   const filePath = body.path
   const newName = body.name
@@ -371,6 +458,7 @@ files.post('/rename', async (c) => {
 })
 
 files.post('/move', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { source?: string; destination?: string }
   const { source, destination } = body
   if (!source || !destination) return c.json({ error: 'source and destination required' }, 400)
@@ -425,6 +513,7 @@ files.post('/move', async (c) => {
 })
 
 files.post('/open-with/mpv', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { path?: string }
   const filePathQuery = body.path
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
@@ -449,6 +538,7 @@ files.post('/open-with/mpv', async (c) => {
 })
 
 files.post('/open-with/yacreader', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { path?: string }
   const filePathQuery = body.path
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)
@@ -470,6 +560,7 @@ files.post('/open-with/yacreader', async (c) => {
 })
 
 files.post('/extract', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const body = await c.req.json() as { path?: string }
   const filePathQuery = body.path
   if (!filePathQuery) return c.json({ error: 'path required' }, 400)

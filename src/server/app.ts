@@ -11,6 +11,8 @@ import search from "./routes/search";
 import users from "./routes/users";
 import db from "./db";
 
+const isDemo = process.env.NODE_ENV === "demo";
+
 const app = new Hono<{
   Variables: {
     user: { id: string; email: string; name?: string } | null;
@@ -42,6 +44,9 @@ app.use("*", async (c, next) => {
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
 app.get("/api/auth/setup-status", (c) => {
+  if (isDemo) {
+    return c.json({ needsSetup: false, demo: true });
+  }
   const row = db.prepare("SELECT COUNT(*) as count FROM user").get() as { count: number } | undefined;
   return c.json({ needsSetup: !row || row.count === 0 });
 });
@@ -76,6 +81,11 @@ app.all("/api/auth/*", async (c) => {
 });
 
 const requireAuth = async (c: any, next: any) => {
+  if (isDemo) {
+    c.set("user", { id: "demo", email: "demo@tagger.app", name: "Demo User" });
+    c.set("session", { id: "demo-session" });
+    return next();
+  }
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) return c.json({ error: "Unauthorized" }, 401);
   c.set("user", session.user);

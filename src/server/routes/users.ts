@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import db from '../db'
 
+const readonly = process.env.NODE_ENV === "demo" && process.env.ALLOW_EDITS_IN_DEMO !== "true"
+
 const users = new Hono<{
   Variables: {
     user: { id: string; email: string; name?: string } | null
@@ -24,6 +26,7 @@ users.get('/settings', (c) => {
 })
 
 users.put('/settings', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const user = c.get('user')
   if (!user) return c.json({ error: 'Not authenticated' }, 401)
 
@@ -50,6 +53,7 @@ users.get('/global-settings', (c) => {
 })
 
 users.put('/global-settings', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const user = c.get('user')
   if (!user) return c.json({ error: 'Not authenticated' }, 401)
 

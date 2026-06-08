@@ -251,7 +251,11 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
                     Relative Path
                   </div>
                   <div className="context-menu-item" onClick={() => {
-                    navigator.clipboard.writeText(contextMenu.entry!.path)
+                    const displayRoot = (listing as any).displayRoot
+                    const p = displayRoot
+                      ? displayRoot + contextMenu.entry!.path.substring(listing.root.length)
+                      : contextMenu.entry!.path
+                    navigator.clipboard.writeText(p)
                     showToast('Copied full path!')
                     setContextMenu(prev => ({ ...prev, visible: false }))
                   }}>
@@ -481,7 +485,7 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
           {allEntries.slice(0, visibleCount).map((entry) => {
             const isSelected = entry.path === selectedPath
             const tags = Array.isArray(entry.metadata.tags) ? entry.metadata.tags : []
-            const isImageFile = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(entry.name)
+            const isImageFile = /\.(jpg|jpeg|png|gif|webp|svg|tiff?|ico)$/i.test(entry.name)
             return (
               <div
                 key={entry.path}

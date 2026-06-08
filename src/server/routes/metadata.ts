@@ -4,6 +4,7 @@ import db from '../db'
 import { isWithinRoot } from '../utils/path'
 
 const ROOT = process.env.ROOT || '/mnt/other/DATA'
+const readonly = process.env.NODE_ENV === "demo" && process.env.ALLOW_EDITS_IN_DEMO !== "true"
 
 const metadata = new Hono()
 
@@ -39,6 +40,7 @@ metadata.get('/', (c) => {
 })
 
 metadata.put('/', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
@@ -57,6 +59,7 @@ metadata.put('/', async (c) => {
 })
 
 metadata.patch('/', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
@@ -83,6 +86,7 @@ metadata.patch('/', async (c) => {
 })
 
 metadata.delete('/:key', (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   const key = c.req.param('key')
   if (!filePath) return c.json({ error: 'path required' }, 400)
@@ -106,6 +110,7 @@ metadata.delete('/:key', (c) => {
 })
 
 metadata.post('/tags', async (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
@@ -134,6 +139,7 @@ metadata.post('/tags', async (c) => {
 })
 
 metadata.delete('/tags/:tag', (c) => {
+  if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   const tag = c.req.param('tag').toLowerCase()
   if (!filePath) return c.json({ error: 'path required' }, 400)

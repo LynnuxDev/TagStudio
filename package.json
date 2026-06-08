@@ -10,7 +10,7 @@
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "pnpm build:client && pnpm build:server",
-    "start": "NODE_ENV=production node --import @dotenvx/dotenvx/config dist/server/index.js",
+    "start": "node dist/server/index.js",
     "test": "tsx --test tests/**/*.test.ts"
   },
   "keywords": [],

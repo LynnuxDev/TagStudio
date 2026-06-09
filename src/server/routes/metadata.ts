@@ -3,7 +3,9 @@ import path from 'path'
 import db from '../db'
 import { isWithinRoot } from '../utils/path'
 
-const ROOT = process.env.ROOT || '/mnt/other/DATA'
+const ROOT = process.env.NODE_ENV === "demo"
+  ? path.resolve(process.cwd(), "demo")
+  : (process.env.ROOT || '/mnt/other/DATA')
 const readonly = process.env.NODE_ENV === "demo" && process.env.ALLOW_EDITS_IN_DEMO !== "true"
 
 const metadata = new Hono()

@@ -5,7 +5,9 @@ import path from 'path'
 
 const search = new Hono()
 
-const ROOT = process.env.ROOT || '/mnt/other/DATA'
+const ROOT = process.env.NODE_ENV === "demo"
+  ? path.resolve(process.cwd(), "demo")
+  : (process.env.ROOT || '/mnt/other/DATA')
 
 async function walkFs(query: string, exts: string[] | null, limit = 100): Promise<string[]> {
   const matches: string[] = []

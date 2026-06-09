@@ -8,3 +8,5 @@ ecosystem.config.js
 result
 .env
 .env.example
+
+*.ts/*

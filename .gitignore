@@ -9,4 +9,4 @@ result
 .env
 .env.example
 
-*.ts/*
+*/**/.ts/*

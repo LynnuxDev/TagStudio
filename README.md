@@ -2,6 +2,15 @@
 
 Tagged file browser and metadata manager — browse, tag, search, and organize files through a web UI.
 
+> **Try the demo:** [tagstudio.lynnux.xyz](https://tagstudio.lynnux.xyz/)
+
+<div align="center">
+  <img src=".github/assets/image-list-home.png" width="49%" alt="File list view" />
+  <img src=".github/assets/image-grid-videos.png" width="49%" alt="Grid view" />
+  <img src=".github/assets/image-search.png" width="49%" alt="Search" />
+  <img src=".github/assets/image-video-lightroom.png" width="49%" alt="Video lightbox" />
+</div>
+
 ## Prerequisites
 
 | Dependency | Required for | Install |
@@ -33,7 +42,7 @@ cp .env.example .env   # (create one from the template below)
 | `PORT` | `3000` | Server port |
 | `DATA_DIR` | `./data` | SQLite database directory |
 | `BASE_URL` | `http://localhost:3000` | Public-facing server URL |
-| `NODE_ENV` | - | Set to `production` in production |
+| `NODE_ENV` | - | Set to `production` in production, `demo` for demo mode |
 | `ORIGIN` | `http://localhost:3000` | Allowed CORS origin (production) |
 
 Example `.env`:

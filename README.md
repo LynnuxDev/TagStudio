@@ -113,3 +113,7 @@ src/
 ```
 
 Data is stored in a SQLite database (`data/tagger.db`) with WAL mode. Authentication uses `better-auth` with email/password.
+
+---
+
+*Built with [opencode](https://opencode.ai) assistance.*

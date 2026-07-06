@@ -8,6 +8,7 @@ import MetadataPanel from './components/MetadataPanel'
 import SearchBar from './components/SearchBar'
 import Breadcrumb from './components/Breadcrumb'
 import Settings, { applyTheme } from './components/Settings'
+import { getCookie, setCookie } from './utils/cookies'
 
 type View = 'browse' | 'settings'
 
@@ -23,10 +24,15 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [showHiddenFiles, setShowHiddenFiles] = useState(false)
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>((getCookie('viewMode') as 'list' | 'grid') || 'list')
   const [currentFiles, setCurrentFiles] = useState<FileEntry[]>([])
   const [rootError, setRootError] = useState('')
   const [isDemo, setIsDemo] = useState(false)
+
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>((getCookie('theme') as 'system' | 'light' | 'dark') || 'dark')
+
+  // apply theme on mount and on change
+  useEffect(() => { applyTheme(theme) }, [theme])
 
   const api = useApiContext()
 
@@ -69,10 +75,8 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         const s = data.settings || {}
-        if (s.theme) applyTheme(s.theme)
         if (s.rootDirectory) setCurrentPath(s.rootDirectory)
         if (s.showHiddenFiles !== undefined) setShowHiddenFiles(s.showHiddenFiles)
-        if (s.viewMode) setViewMode(s.viewMode)
       })
       .catch(() => {})
   }, [])
@@ -143,7 +147,8 @@ export default function App() {
             onRootDirChange={handleRootDirChange}
             onSettingsChange={s => {
               if (s.showHiddenFiles !== undefined) setShowHiddenFiles(s.showHiddenFiles)
-              if (s.viewMode) setViewMode(s.viewMode)
+              if (s.viewMode) { setViewMode(s.viewMode); setCookie('viewMode', s.viewMode) }
+              if (s.theme) { setTheme(s.theme); setCookie('theme', s.theme) }
             }}
           />
         </div>

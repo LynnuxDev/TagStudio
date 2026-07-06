@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { setCookie } from '../utils/cookies'
 
 interface UserSettings {
   rootDirectory?: string
@@ -43,8 +44,9 @@ export default function Settings({ onClose, onRootDirChange, onSettingsChange }:
       const data = await res.json()
       setSettings(data.settings || merged)
 
-      if (partial.theme) applyTheme(partial.theme)
+      if (partial.theme) { applyTheme(partial.theme); setCookie('theme', partial.theme) }
       if (partial.rootDirectory !== undefined) onRootDirChange(partial.rootDirectory)
+      if (partial.viewMode) setCookie('viewMode', partial.viewMode)
       if (onSettingsChange) onSettingsChange(merged)
 
       setMessage('Saved')

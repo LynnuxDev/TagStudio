@@ -54,8 +54,8 @@ app.get("/api/auth/setup-status", (c) => {
 app.use(
   "/api/*",
   rateLimiter({
-    windowMs: 60 * 1000,
-    limit: 200,
+    windowMs: 15 * 1000,
+    limit: 2000,
     standardHeaders: true,
     keyGenerator: (c) => c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown",
     message: { error: "Too many requests" },

@@ -19,8 +19,17 @@ const files = new Hono()
 
 /** Thumbnail location for a file — keyed by canonical path so a file reached
  *  via a symlink shares one thumbnail with its real-path counterpart. */
+export const CACHE_DIR_NAME = '.ts'
+
+/** True when the path lives inside a thumbnail/remux cache dir. Thumbnails
+ *  must never be generated for cache files themselves, or every `.ts`
+ *  listing spawns a nested `.ts/.ts/.ts…` chain. */
+export function isCachePath(p: string): boolean {
+  return p.split(path.sep).includes(CACHE_DIR_NAME)
+}
+
 function thumbPathForCanonical(canonical: string): { thumbDir: string; thumbPath: string } {
-  const thumbDir = path.join(path.dirname(canonical), '.ts')
+  const thumbDir = path.join(path.dirname(canonical), CACHE_DIR_NAME)
   const hash = crypto.createHash('md5').update(canonical).digest('hex')
   return { thumbDir, thumbPath: path.join(thumbDir, `${hash}.webp`) }
 }
@@ -43,6 +52,8 @@ const remuxJobs = new Map<string, Promise<string | null>>()
  */
 async function remuxTsToMp4(filePath: string): Promise<string | null> {
   const canonical = await canonicalPath(filePath)
+  // Never remux cache byproducts (e.g. a .remux.mp4 living in .ts).
+  if (isCachePath(canonical)) return null
   const outPath = remuxPathForCanonical(canonical)
 
   let srcStat
@@ -215,6 +226,9 @@ files.get('/', async (c) => {
     if (!showHidden) {
       entries = entries.filter(e => !e.name.startsWith('.'))
     }
+    // Cache dirs are an implementation detail — never browseable, even with
+    // showHidden. Otherwise requesting thumbnails inside .ts spawns .ts/.ts.
+    entries = entries.filter(e => !(e.name === CACHE_DIR_NAME && e.isDirectory()))
     // Canonical dir so metadata lookups follow symlinks: files reached via
     // a linked dir share tags with their real-path counterparts.
     const canonicalDir = await canonicalPath(dirPath)
@@ -514,6 +528,14 @@ files.get('/thumbnail', async (c) => {
 
   const filePath = path.resolve(filePathQuery)
   if (!checkAccess(filePath)) return c.json({ error: 'Access denied' }, 403)
+
+  const canonicalForGuard = await canonicalPath(filePath)
+  // Refuse to thumbnail cache files themselves — the frontend falls back to
+  // /raw for images and to an icon for videos, so this safely breaks the
+  // .ts/.ts/.ts recursion instead of nesting another cache level.
+  if (isCachePath(canonicalForGuard)) {
+    return c.json({ error: 'Path is a thumbnail cache file' }, 400)
+  }
 
   const { thumbDir, thumbPath } = await thumbPathFor(filePath)
 

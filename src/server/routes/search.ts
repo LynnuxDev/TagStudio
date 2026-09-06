@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import db from '../db'
 import fs from 'fs/promises'
 import path from 'path'
+import { canonicalPath, loadMetadata } from '../utils/canonical'
+import { sniffTsKind } from '../utils/media'
 
 const search = new Hono()
 
@@ -12,9 +14,23 @@ const ROOT = process.env.NODE_ENV === "demo"
 async function walkFs(query: string, exts: string[] | null, limit = 100): Promise<string[]> {
   const matches: string[] = []
   const queue = [ROOT]
+  const visited = new Set<string>()
   const lower = query.toLowerCase()
   let totalVisited = 0
   const start = Date.now()
+
+  try {
+    visited.add(await fs.realpath(ROOT).catch(() => ROOT))
+  } catch { visited.add(ROOT) }
+
+  async function isDir(fullPath: string): Promise<boolean> {
+    try {
+      const st = await fs.stat(fullPath)
+      return st.isDirectory()
+    } catch {
+      return false
+    }
+  }
 
   while (queue.length > 0 && matches.length < limit && totalVisited < 5000) {
     if (Date.now() - start > 5000) break
@@ -27,9 +43,16 @@ async function walkFs(query: string, exts: string[] | null, limit = 100): Promis
         if (entry.name.startsWith('.')) continue
         totalVisited++
         const fullPath = path.join(dir, entry.name)
-        if (entry.isDirectory()) {
+        if (await isDir(fullPath)) {
+          try {
+            const real = await fs.realpath(fullPath)
+            if (visited.has(real)) continue
+            visited.add(real)
+          } catch { continue }
           queue.push(fullPath)
-        } else if (entry.name.toLowerCase().includes(lower)) {
+          continue
+        }
+        if (entry.name.toLowerCase().includes(lower)) {
           if (exts) {
             const ext = path.extname(entry.name).toLowerCase()
             if (!exts.includes(ext)) continue
@@ -91,7 +114,7 @@ search.get('/', async (c) => {
 
   const rows = db.prepare(sql).all(...params) as { path: string; metadata: string; updated_at: string }[]
 
-  const metaResults = rows.map(row => ({
+  const metaResults: { path: string; metadata: Record<string, unknown>; updated_at: string; kind?: 'video' | 'text' | null }[] = rows.map(row => ({
     path: row.path,
     metadata: JSON.parse(row.metadata),
     updated_at: row.updated_at,
@@ -108,14 +131,17 @@ search.get('/', async (c) => {
     }
     const fsPaths = await walkFs(q || '', exts, 100)
     for (const fp of fsPaths) {
-      if (seen.has(fp)) continue
+      // Dedupe by canonical path: the same file can be reached via a link
+      // path and its real path when linked dirs are traversed.
+      const real = await canonicalPath(fp)
+      if (seen.has(fp) || seen.has(real)) continue
       seen.add(fp)
-      const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(fp) as { metadata: string } | undefined
-      let metadata: Record<string, unknown> = {}
-      if (row) {
-        try { metadata = JSON.parse(row.metadata) } catch { }
-      }
-      metaResults.push({ path: fp, metadata, updated_at: '' })
+      seen.add(real)
+      const metadata = loadMetadata(real, fp)
+      const kind = path.extname(fp).toLowerCase() === '.ts'
+        ? await sniffTsKind(real)
+        : null
+      metaResults.push({ path: fp, metadata, updated_at: '', kind })
     }
   }
 

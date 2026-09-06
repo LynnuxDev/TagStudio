@@ -3,8 +3,8 @@ import type { SearchResult } from '../types'
 import { useApiContext } from '../hooks/ApiContext'
 
 const COMMON_EXTENSIONS = [
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-  '.mp4', '.mov', '.avi', '.mkv',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.rpgmvp', '.png_',
+  '.mp4', '.m4v', '.mov', '.avi', '.mkv',
   '.mp3', '.wav', '.flac', '.ogg',
   '.pdf', '.doc', '.docx', '.txt',
   '.zip', '.tar', '.gz', '.rar',

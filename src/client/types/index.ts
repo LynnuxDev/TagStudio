@@ -2,6 +2,11 @@ export interface FileEntry {
   name: string
   path: string
   isDirectory: boolean
+  isSymlink?: boolean
+  symlinkTarget?: string | null
+  isBrokenLink?: boolean
+  /** Disambiguated content kind (e.g. `.ts` video vs TypeScript source). */
+  kind?: 'video' | 'text' | null
   size: number
   modified: string
   created: string
@@ -28,6 +33,7 @@ export interface SearchResult {
   path: string
   metadata: Record<string, unknown>
   updated_at: string
+  kind?: 'video' | 'text' | null
 }
 
 export interface User {

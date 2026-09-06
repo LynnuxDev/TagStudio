@@ -142,6 +142,19 @@ button:hover {
   text-decoration: underline;
 }
 
+.login-guest-btn {
+  background: transparent;
+  border: 1px solid var(--border, #444);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
 .setup-toggle {
   display: flex;
   align-items: center;
@@ -497,6 +510,114 @@ button:hover {
   z-index: 1;
 }
 
+.file-list-header .sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-list-header .sortable:hover {
+  color: var(--text-bright);
+}
+
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sort-bar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sort-bar select {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.sort-dir-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sort-dir-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* Multi-select */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* In list mode the header is sticky above the bar. */
+.file-list:not(.file-grid) .selection-bar {
+  top: 34px;
+}
+
+.selection-count {
+  color: var(--text-bright);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.selection-bar button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.selection-bar button:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+.selection-bar .selection-danger {
+  color: var(--danger);
+}
+
+.selection-bar .selection-danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.file-row.is-checked,
+.file-grid-card.is-checked {
+  outline: 1px solid var(--accent);
+}
+
+.pager-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
 .file-list-body {
   padding-bottom: 40px;
 }
@@ -683,6 +804,7 @@ button:hover {
   font-size: 16px;
   color: var(--text-bright);
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
 }
 
 .metadata-path {
@@ -785,6 +907,12 @@ button:hover {
   margin-bottom: 8px;
 }
 
+.tags-list .tag-badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .add-tag-form, .add-field-form {
   display: flex;
   gap: 8px;
@@ -792,6 +920,7 @@ button:hover {
 
 .add-tag-form input, .add-field-form input {
   flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   font-size: 13px;
 }
@@ -799,6 +928,7 @@ button:hover {
 .add-tag-form button, .add-field-form button {
   padding: 6px 12px;
   font-size: 13px;
+  flex-shrink: 0;
 }
 
 .metadata-field {
@@ -812,6 +942,7 @@ button:hover {
   color: var(--accent);
   display: block;
   margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
 
 .field-value-row {
@@ -822,6 +953,8 @@ button:hover {
 }
 
 .field-value {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--text);
   word-break: break-all;
@@ -859,6 +992,7 @@ button:hover {
 
 .field-edit input {
   flex: 1;
+  min-width: 0;
   padding: 4px 8px;
   font-size: 13px;
 }
@@ -866,6 +1000,7 @@ button:hover {
 .field-edit button {
   padding: 4px 8px;
   font-size: 12px;
+  flex-shrink: 0;
 }
 
 /* Loading / error states */
@@ -1018,6 +1153,27 @@ button:hover {
 }
 
 /* Toast Notification */
+.file-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.file-pager button {
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-bright);
+  cursor: pointer;
+}
+.file-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .toast-notification {
   position: fixed;
   bottom: 20px;
@@ -1070,6 +1226,11 @@ button:hover {
   display: block;
 }
 
+.sidebar-audio-player {
+  width: 100%;
+  max-width: 100%;
+}
+
 .open-with-mpv {
   display: block;
   width: 100%;
@@ -1107,6 +1268,15 @@ button:hover {
 .archive-file-item.dir {
   font-weight: 500;
   color: var(--text-bright);
+}
+
+.archive-file-item .file-name-text,
+.archive-file-item .dir-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .archive-file-item:hover {
@@ -1177,7 +1347,7 @@ button:hover {
 
 .file-info-grid {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 12px;
   font-size: 12px;
 }
@@ -1413,6 +1583,7 @@ button:hover {
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
+  position: relative;
 }
 
 .file-grid-card-parent {

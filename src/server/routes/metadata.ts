@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import path from 'path'
 import db from '../db'
 import { isWithinRoot } from '../utils/path'
+import { canonicalPath, loadMetadata, storeMetadata } from '../utils/canonical'
 
 const ROOT = process.env.NODE_ENV === "demo"
   ? path.resolve(process.cwd(), "demo")
@@ -21,23 +22,28 @@ metadata.use('*', async (c, next) => {
   await next()
 })
 
-metadata.get('/', (c) => {
+metadata.get('/', async (c) => {
   const filePath = c.req.query('path')
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
-  const row = db.prepare('SELECT metadata, created_at, updated_at FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string; created_at: string; updated_at: string } | undefined
-  if (!row) {
+  const canonical = await canonicalPath(path.resolve(filePath))
+  const row = db.prepare('SELECT metadata, created_at, updated_at FROM file_metadata WHERE path = ?').get(canonical) as { metadata: string; created_at: string; updated_at: string } | undefined
+  const fallback = canonical === filePath
+    ? undefined
+    : db.prepare('SELECT metadata, created_at, updated_at FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string; created_at: string; updated_at: string } | undefined
+  const found = row ?? fallback
+  if (!found) {
     return c.json({ path: filePath, metadata: {} })
   }
 
-  let parsed: Record<string, unknown> = {}
-  try { parsed = JSON.parse(row.metadata) } catch { }
+  // Merge canonical + stale literal rows so link/real-path views stay in sync.
+  const parsed = loadMetadata(canonical, filePath)
 
   return c.json({
     path: filePath,
     metadata: parsed,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: found.created_at,
+    updated_at: found.updated_at,
   })
 })
 
@@ -47,17 +53,11 @@ metadata.put('/', async (c) => {
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
   const body = await c.req.json() as { metadata?: Record<string, unknown> }
-  const metadataStr = JSON.stringify(body.metadata || {})
+  const next = body.metadata || {}
+  const canonical = await canonicalPath(path.resolve(filePath))
+  storeMetadata(canonical, filePath, next)
 
-  db.prepare(`
-    INSERT INTO file_metadata (path, metadata, updated_at)
-    VALUES (?, ?, datetime('now'))
-    ON CONFLICT(path) DO UPDATE SET
-      metadata = excluded.metadata,
-      updated_at = datetime('now')
-  `).run(filePath, metadataStr)
-
-  return c.json({ path: filePath, metadata: body.metadata || {} })
+  return c.json({ path: filePath, metadata: next })
 })
 
 metadata.patch('/', async (c) => {
@@ -67,46 +67,30 @@ metadata.patch('/', async (c) => {
 
   const body = await c.req.json() as { metadata?: Record<string, unknown> }
 
-  const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string } | undefined
-  let existing: Record<string, unknown> = {}
-  if (row) {
-    try { existing = JSON.parse(row.metadata) } catch { }
-  }
+  const canonical = await canonicalPath(path.resolve(filePath))
+  const existing = loadMetadata(canonical, filePath)
 
   const merged = { ...existing, ...(body.metadata || {}) }
-  const metadataStr = JSON.stringify(merged)
-
-  db.prepare(`
-    INSERT INTO file_metadata (path, metadata, updated_at)
-    VALUES (?, ?, datetime('now'))
-    ON CONFLICT(path) DO UPDATE SET
-      metadata = excluded.metadata,
-      updated_at = datetime('now')
-  `).run(filePath, metadataStr)
+  storeMetadata(canonical, filePath, merged)
 
   return c.json({ path: filePath, metadata: merged })
 })
 
-metadata.delete('/:key', (c) => {
+metadata.delete('/:key', async (c) => {
   if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   const key = c.req.param('key')
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
-  const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string } | undefined
-  if (!row) {
-    return c.json({ error: 'not found' }, 404)
+  const canonical = await canonicalPath(path.resolve(filePath))
+  const existing = loadMetadata(canonical, filePath)
+  if (!(key in existing)) {
+    const hasAny = Object.keys(existing).length > 0
+    if (!hasAny) return c.json({ error: 'not found' }, 404)
   }
 
-  let existing: Record<string, unknown> = {}
-  try { existing = JSON.parse(row.metadata) } catch { }
-
   delete existing[key]
-  const metadataStr = JSON.stringify(existing)
-
-  db.prepare(
-    "UPDATE file_metadata SET metadata = ?, updated_at = datetime('now') WHERE path = ?"
-  ).run(metadataStr, filePath)
+  storeMetadata(canonical, filePath, existing)
 
   return c.json({ path: filePath, metadata: existing })
 })
@@ -119,48 +103,31 @@ metadata.post('/tags', async (c) => {
   const body = await c.req.json() as { tags?: string[] }
   const newTags = (body.tags || []).map(t => t.toLowerCase())
 
-  const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string } | undefined
-  let existing: Record<string, unknown> = {}
-  if (row) {
-    try { existing = JSON.parse(row.metadata) } catch { }
-  }
+  const canonical = await canonicalPath(path.resolve(filePath))
+  const existing = loadMetadata(canonical, filePath)
 
   const currentTags = (existing.tags as string[]) || []
   existing.tags = [...new Set([...currentTags, ...newTags])]
-  const metadataStr = JSON.stringify(existing)
-
-  db.prepare(`
-    INSERT INTO file_metadata (path, metadata, updated_at)
-    VALUES (?, ?, datetime('now'))
-    ON CONFLICT(path) DO UPDATE SET
-      metadata = excluded.metadata,
-      updated_at = datetime('now')
-  `).run(filePath, metadataStr)
+  storeMetadata(canonical, filePath, existing)
 
   return c.json({ path: filePath, metadata: existing })
 })
 
-metadata.delete('/tags/:tag', (c) => {
+metadata.delete('/tags/:tag', async (c) => {
   if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
   const filePath = c.req.query('path')
   const tag = c.req.param('tag').toLowerCase()
   if (!filePath) return c.json({ error: 'path required' }, 400)
 
-  const row = db.prepare('SELECT metadata FROM file_metadata WHERE path = ?').get(filePath) as { metadata: string } | undefined
-  if (!row) {
+  const canonical = await canonicalPath(path.resolve(filePath))
+  const existing = loadMetadata(canonical, filePath)
+  const currentTags = (existing.tags as string[]) || []
+  if (!currentTags.includes(tag)) {
     return c.json({ error: 'not found' }, 404)
   }
 
-  let existing: Record<string, unknown> = {}
-  try { existing = JSON.parse(row.metadata) } catch { }
-
-  const currentTags = (existing.tags as string[]) || []
   existing.tags = currentTags.filter((t: string) => t !== tag)
-  const metadataStr = JSON.stringify(existing)
-
-  db.prepare(
-    "UPDATE file_metadata SET metadata = ?, updated_at = datetime('now') WHERE path = ?"
-  ).run(metadataStr, filePath)
+  storeMetadata(canonical, filePath, existing)
 
   return c.json({ path: filePath, metadata: existing })
 })

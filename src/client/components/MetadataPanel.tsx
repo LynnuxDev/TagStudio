@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react'
 import type { FileEntry, MetadataResponse } from '../types'
 import type { InfoRow } from '../fileInfoProviders'
 import { getExtraRows } from '../fileInfoProviders'
+import { isAudioEntry, isImageEntry, isTextEntry, isVideoEntry } from '../utils/media'
 import { useApiContext } from '../hooks/ApiContext'
 
 interface MetadataPanelProps {
   file: FileEntry | null
   onUpdate: () => void
   onNavigateMedia?: (dir: 1 | -1) => void
+  readOnly?: boolean
 }
 
 interface TreeNode {
@@ -125,7 +127,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: MetadataPanelProps) {
+export default function MetadataPanel({ file, onUpdate, onNavigateMedia, readOnly }: MetadataPanelProps) {
   const [meta, setMeta] = useState<MetadataResponse | null>(null)
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
@@ -146,11 +148,11 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
   const [textSaving, setTextSaving] = useState(false)
   const [mediaInfo, setMediaInfo] = useState<{ width?: number; height?: number; duration?: number }>({})
 
-  const isImage = file ? /\.(jpg|jpeg|png|gif|webp|svg|tiff?|ico)$/i.test(file.name) : false
-  const isVideo = file ? /\.(mp4|mov|webm|avi|mkv|wmv|flv)$/i.test(file.name) : false
-  const isAudio = file ? /\.(mp3|wav|flac|ogg|m4a|aac|opus|wma)$/i.test(file.name) : false
+  const isImage = file ? isImageEntry(file) : false
+  const isVideo = file ? isVideoEntry(file) : false
+  const isAudio = file ? isAudioEntry(file) : false
   const isZip = file ? /\.zip$/i.test(file.name) : false
-  const isText = file ? /\.(txt|md|json|xml|yaml|yml|csv|log|sh|js|ts|py|rb|html|css|cfg|ini|conf|env|toml|lock|sql|r|go|rs|java|c|cpp|h|hpp|mermaid)$/i.test(file.name) : false
+  const isText = file ? isTextEntry(file) : false
 
   const [lightbox, setLightbox] = useState<{ type: 'image' | 'video'; src: string } | null>(null)
   const lightboxOpen = useRef(false)
@@ -175,14 +177,21 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
   const { getMetadata, patchMetadata, deleteMetadataKey, addTags, removeTag, getArchiveList, saveTextFile, openWithMpv } = useApiContext()
 
   useEffect(() => {
+    let cancelled = false
     if (file) {
-      getMetadata(file.path).then(setMeta).catch(() => setMeta(null))
+      getMetadata(file.path)
+        .then(data => { if (!cancelled) setMeta(data) })
+        .catch(() => { if (!cancelled) setMeta(null) })
     } else {
       setMeta(null)
     }
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file])
 
   useEffect(() => {
+    let cancelled = false
+    const abort = new AbortController()
     setArchiveFiles(null)
     setArchiveError('')
     setExtraRows([])
@@ -190,47 +199,80 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
     setTextError('')
     setTextDraft(null)
 
-    if (file && isZip) {
+    let probeImg: HTMLImageElement | null = null
+    let probeMedia: HTMLVideoElement | HTMLAudioElement | null = null
+
+    if (file && isZip && !readOnly) {
       setArchiveLoading(true)
       getArchiveList(file.path)
-        .then((res: { files: string[] }) => setArchiveFiles(res.files))
-        .catch((err: any) => setArchiveError(err.message || 'Failed to load archive'))
-        .finally(() => setArchiveLoading(false))
+        .then((res: { files: string[] }) => { if (!cancelled) setArchiveFiles(res.files) })
+        .catch((err: any) => { if (!cancelled) setArchiveError(err.message || 'Failed to load archive') })
+        .finally(() => { if (!cancelled) setArchiveLoading(false) })
     }
 
-    if (file && !file.isDirectory && isText && file.size <= 100 * 1024) {
+    if (file && !file.isDirectory && isText && file.size <= 100 * 1024 && !readOnly) {
       setTextLoading(true)
-      fetch(`/api/files/read-text?path=${encodeURIComponent(file.path)}`, { credentials: 'include' })
+      fetch(`/api/files/read-text?path=${encodeURIComponent(file.path)}`, { credentials: 'include', signal: abort.signal })
         .then(r => r.json())
         .then(data => {
+          if (cancelled) return
           if (data.content !== undefined) setTextContent(data.content)
           else setTextError(data.error || 'Failed to read')
         })
-        .catch(() => setTextError('Failed to read file'))
-        .finally(() => setTextLoading(false))
+        .catch((err) => { if (!cancelled && err?.name !== 'AbortError') setTextError('Failed to read file') })
+        .finally(() => { if (!cancelled) setTextLoading(false) })
     } else if (file && !file.isDirectory && isText && file.size > 100 * 1024) {
       setTextError('File too large to preview (max 100 KB)')
     }
 
     if (file && !file.isDirectory) {
-      getExtraRows(file).then(setExtraRows)
+      getExtraRows(file).then(rows => { if (!cancelled) setExtraRows(rows) })
     }
 
     setMediaInfo({})
     if (file && isImage) {
       const img = new Image()
-      img.onload = () => setMediaInfo({ width: img.naturalWidth, height: img.naturalHeight })
+      probeImg = img
+      img.onload = () => {
+        if (!cancelled) setMediaInfo({ width: img.naturalWidth, height: img.naturalHeight })
+        img.onload = null
+        img.onerror = null
+      }
+      img.onerror = () => {
+        img.onload = null
+        img.onerror = null
+      }
       img.src = `/api/files/raw?path=${encodeURIComponent(file.path)}`
     } else if (file && (isVideo || isAudio)) {
       const el = document.createElement(isAudio ? 'audio' : 'video')
+      probeMedia = el
       el.preload = 'metadata'
       el.onloadedmetadata = () => {
-        setMediaInfo({ duration: el.duration })
-        el.src = ''
+        if (!cancelled) setMediaInfo({ duration: el.duration })
+        el.onloadedmetadata = null
+        el.removeAttribute('src')
+        el.load()
       }
       el.src = `/api/files/raw?path=${encodeURIComponent(file.path)}`
     }
-  }, [file, isZip, isText, isImage, isVideo, isAudio])
+
+    return () => {
+      cancelled = true
+      abort.abort()
+      if (probeImg) {
+        probeImg.onload = null
+        probeImg.onerror = null
+        probeImg.removeAttribute('src')
+      }
+      if (probeMedia) {
+        probeMedia.onloadedmetadata = null
+        try { (probeMedia as HTMLVideoElement).pause?.() } catch { /* noop */ }
+        probeMedia.removeAttribute('src')
+        probeMedia.load()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, isZip, isText, isImage, isVideo, isAudio, readOnly])
 
   useEffect(() => {
     if (!lightbox) return
@@ -335,9 +377,13 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
   }
 
   const permString = file.mode ? ((file.mode & parseInt('777', 8)).toString(8)) : '-'
-  const typeLabel = file.isDirectory
-    ? 'Directory'
-    : (file.extension ? file.extension.slice(1).toUpperCase() : 'File')
+  const typeLabel = file.isBrokenLink
+    ? 'Broken link'
+    : file.isSymlink
+      ? (file.isDirectory ? 'Link → Directory' : `Link → ${(file.extension ? file.extension.slice(1).toUpperCase() : 'File')}`)
+      : file.isDirectory
+        ? 'Directory'
+        : (file.extension ? file.extension.slice(1).toUpperCase() : 'File')
 
   return (
     <div className="metadata-panel">
@@ -382,21 +428,25 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
             ) : (
               <div className="description-display">
                 <div className="description-text">{String(metadata.description)}</div>
-                <div className="description-actions">
-                  <button className="btn-icon" onClick={() => {
-                    setDescriptionDraft(String(metadata.description))
-                    setEditingDescription(true)
-                  }} title="Edit">&#9998;</button>
-                  <button className="btn-icon delete" onClick={() => handleDeleteKey('description')} title="Delete">&times;</button>
-                </div>
+                {!readOnly && (
+                  <div className="description-actions">
+                    <button className="btn-icon" onClick={() => {
+                      setDescriptionDraft(String(metadata.description))
+                      setEditingDescription(true)
+                    }} title="Edit">&#9998;</button>
+                    <button className="btn-icon delete" onClick={() => handleDeleteKey('description')} title="Delete">&times;</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         ) : (
-          <button className="add-description-btn" onClick={() => {
-            setDescriptionDraft('')
-            setEditingDescription(true)
-          }}>+ Add Description</button>
+          !readOnly && (
+            <button className="add-description-btn" onClick={() => {
+              setDescriptionDraft('')
+              setEditingDescription(true)
+            }}>+ Add Description</button>
+          )
         )}
       </div>
 
@@ -405,6 +455,7 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
           <h4>Preview</h4>
           {isImage ? (
             <img
+              key={file.path}
               src={`/api/files/raw?path=${encodeURIComponent(file.path)}`}
               alt={file.name}
               className="sidebar-preview-image"
@@ -413,17 +464,21 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
           ) : isVideo ? (
             <>
               <img
+                key={`thumb-${file.path}`}
                 src={`/api/files/thumbnail?path=${encodeURIComponent(file.path)}`}
                 alt={file.name}
                 className="sidebar-preview-image"
                 onClick={() => openLightbox('video', `/api/files/raw?path=${encodeURIComponent(file.path)}`)}
               />
-              <button className="open-with-mpv" onClick={() => openWithMpv(file.path)}>
-                ▶ Open with mpv
-              </button>
+              {!readOnly && (
+                <button className="open-with-mpv" onClick={() => openWithMpv(file.path)}>
+                  ▶ Open with mpv
+                </button>
+              )}
             </>
           ) : (
             <audio
+              key={file.path}
               src={`/api/files/raw?path=${encodeURIComponent(file.path)}`}
               className="sidebar-audio-player"
               controls
@@ -438,6 +493,19 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
         <div className="file-info-grid">
           <span className="info-label">Type</span>
           <span className="info-value">{typeLabel}</span>
+
+          {file.isSymlink && (
+            <>
+              <span className="info-label">Link target</span>
+              <span className="info-value mono" title={file.symlinkTarget || ''}>{file.symlinkTarget || '(unreadable)'}</span>
+            </>
+          )}
+          {file.isBrokenLink && (
+            <>
+              <span className="info-label">Link status</span>
+              <span className="info-value">⚠️ Target not found</span>
+            </>
+          )}
 
           <span className="info-label">Size</span>
           <span className="info-value mono">{formatSize(file.size)}</span>
@@ -488,7 +556,9 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
       {isZip && (
         <div className="preview-section archive-preview">
           <h4>Archive Contents</h4>
-          {archiveLoading ? (
+          {readOnly ? (
+            <div className="archive-empty">Sign in as admin to list archive contents.</div>
+          ) : archiveLoading ? (
             <div className="archive-loading">Loading archive contents...</div>
           ) : archiveError ? (
             <div className="archive-error">{archiveError}</div>
@@ -507,7 +577,9 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
       {isText && (
         <div className="preview-section text-preview">
           <h4>Preview</h4>
-          {textLoading ? (
+          {readOnly ? (
+            <div className="archive-empty">Sign in as admin to view text content.</div>
+          ) : textLoading ? (
             <div className="archive-loading">Loading file content...</div>
           ) : textError ? (
             <div className="archive-error">{textError}</div>
@@ -535,21 +607,27 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
         <h4>Tags</h4>
         <div className="tags-list">
           {tags.map(tag => (
-            <span key={tag} className="tag-badge removable" onClick={() => handleRemoveTag(tag)}>
-              {tag} &times;
-            </span>
+            readOnly ? (
+              <span key={tag} className="tag-badge">{tag}</span>
+            ) : (
+              <span key={tag} className="tag-badge removable" onClick={() => handleRemoveTag(tag)}>
+                {tag} &times;
+              </span>
+            )
           ))}
         </div>
-        <div className="add-tag-form">
-          <input
-            type="text"
-            placeholder="Add tag..."
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
-          />
-          <button onClick={handleAddTag}>Add</button>
-        </div>
+        {!readOnly && (
+          <div className="add-tag-form">
+            <input
+              type="text"
+              placeholder="Add tag..."
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
+            />
+            <button onClick={handleAddTag}>Add</button>
+          </div>
+        )}
       </div>
 
       <div className="metadata-section">
@@ -572,33 +650,36 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
             ) : (
               <div className="field-value-row">
                 <span className="field-value">{String(metadata[key])}</span>
-                <div className="field-actions">
-                  <button
-                    className="btn-icon"
-                    onClick={() => {
-                      setEditingKey(key)
-                      setEditValue(String(metadata[key]))
-                    }}
-                    title="Edit"
-                  >
-                    &#9998;
-                  </button>
-                  <button
-                    className="btn-icon delete"
-                    onClick={() => handleDeleteKey(key)}
-                    title="Delete"
-                  >
-                    &times;
-                  </button>
-                </div>
+                {!readOnly && (
+                  <div className="field-actions">
+                    <button
+                      className="btn-icon"
+                      onClick={() => {
+                        setEditingKey(key)
+                        setEditValue(String(metadata[key]))
+                      }}
+                      title="Edit"
+                    >
+                      &#9998;
+                    </button>
+                    <button
+                      className="btn-icon delete"
+                      onClick={() => handleDeleteKey(key)}
+                      title="Delete"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         ))}
       </div>
 
-      <div className="metadata-section">
-        <h4>Add Field</h4>
+      {!readOnly && (
+        <div className="metadata-section">
+          <h4>Add Field</h4>
         <div className="add-field-form">
           <input
             type="text"
@@ -643,8 +724,9 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
             onKeyDown={(e) => e.key === 'Enter' && handleAddField()}
           />
           <button onClick={handleAddField}>Add</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {lightbox && (
         <div className="lightbox-overlay" onClick={(e) => {
@@ -659,9 +741,9 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia }: Metad
             <div className="lightbox-nav-hint lightbox-nav-prev" onClick={() => onNavigateMedia?.(-1)} />
             <div className="lightbox-nav-hint lightbox-nav-next" onClick={() => onNavigateMedia?.(1)} />
             {lightbox.type === 'image' ? (
-              <img src={lightbox.src} alt="preview" className="lightbox-media" />
+              <img key={lightbox.src} src={lightbox.src} alt="preview" className="lightbox-media" />
             ) : (
-              <video src={lightbox.src} className="lightbox-media" controls autoPlay />
+              <video key={lightbox.src} src={lightbox.src} className="lightbox-media" controls autoPlay />
             )}
           </div>
         </div>

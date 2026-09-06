@@ -143,6 +143,15 @@ export default function Settings({ onClose, onRootDirChange, onSettingsChange }:
               onChange={e => saveGlobal({ disable_signup: e.target.checked ? 'true' : 'false' })}
             />
           </label>
+          <label className="settings-field">
+            <span className="settings-label">Allow guest read-only access</span>
+            <input
+              type="checkbox"
+              checked={globalSettings.guest_readonly === 'true'}
+              onChange={e => saveGlobal({ guest_readonly: e.target.checked ? 'true' : 'false' })}
+            />
+          </label>
+          <p className="settings-hint">Guests can browse, preview, and search without logging in. File contents of text files, archive listings, and all edits stay admin-only.</p>
         </div>
 
         {message && <div className="settings-message">{message}</div>}

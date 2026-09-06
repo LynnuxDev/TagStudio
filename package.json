@@ -2,9 +2,11 @@
   "name": "tagstudio",
   "version": "1.0.0",
   "description": "Tagged file browser and metadata manager",
-  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev:server": "tsx watch -r @dotenvx/dotenvx/config src/server/index.ts",
+    "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
     "dev": "concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
     "build:client": "vite build",

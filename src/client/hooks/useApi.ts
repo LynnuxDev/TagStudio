@@ -154,5 +154,10 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ path: filePath }),
       }),
+    decryptRpgMaker: (filePath: string) =>
+      request<{ success: boolean; output: string }>("/files/decrypt-rpgmaker", {
+        method: "POST",
+        body: JSON.stringify({ path: filePath }),
+      }),
   };
 }

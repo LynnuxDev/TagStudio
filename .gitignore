@@ -1,12 +1,25 @@
-.env.keys
-node_modules
-dist
-data
-
-ecosystem.config.js
-**/*.db
-result
+# Secrets / local env — never commit these
 .env
-.env.example
+.env.keys
 
-*/**/.ts/*
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+
+# Database (created at runtime)
+data
+**/*.db
+!demo/Documents/db-example.db
+
+# Generated thumbnail / remux caches written next to your files
+**/.ts/
+
+# Nix dev shell (local only)
+.direnv/
+result
+
+# Logs / OS noise
+*.log
+.DS_Store

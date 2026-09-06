@@ -3,9 +3,10 @@ import { useApiContext } from '../hooks/ApiContext'
 
 interface LoginProps {
   onAuth: () => void
+  onGuest?: () => void
 }
 
-export default function Login({ onAuth }: LoginProps) {
+export default function Login({ onAuth, onGuest }: LoginProps) {
   const { signIn, signUp } = useApiContext()
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -13,12 +14,14 @@ export default function Login({ onAuth }: LoginProps) {
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [signupDisabled, setSignupDisabled] = useState(false)
+  const [guestEnabled, setGuestEnabled] = useState(false)
 
   useEffect(() => {
     fetch('/api/users/global-settings', { credentials: 'include' })
       .then(r => r.json())
       .then(data => {
         if (data.settings?.disable_signup === 'true') setSignupDisabled(true)
+        if (data.settings?.guest_readonly === 'true') setGuestEnabled(true)
       })
       .catch(() => {})
   }, [])
@@ -67,6 +70,11 @@ export default function Login({ onAuth }: LoginProps) {
         />
         {error && <p className="login-error">{error}</p>}
         <button type="submit">{isSignUp ? 'Sign Up' : 'Sign In'}</button>
+        {guestEnabled && onGuest && (
+          <button type="button" className="login-guest-btn" onClick={onGuest}>
+            Continue as guest (read-only)
+          </button>
+        )}
         {signupDisabled ? null : (
           <p className="login-toggle" onClick={() => setIsSignUp(!isSignUp)}>
             {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}

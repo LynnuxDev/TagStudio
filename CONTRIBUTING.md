@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Node.js >= 20
-- pnpm
+- Node.js >= 22
+- pnpm >= 10
 - ffmpeg (for video thumbnails)
 - p7zip (for archive extraction)
 - mpv (optional, "open with mpv")

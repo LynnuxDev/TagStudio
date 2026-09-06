@@ -15,8 +15,8 @@ Tagged file browser and metadata manager — browse, tag, search, and organize f
 
 | Dependency | Required for | Install |
 |---|---|---|
-| Node.js >= 20 | Runtime | https://nodejs.org |
-| pnpm | Package management | `npm install -g pnpm` |
+| Node.js >= 22 | Runtime | https://nodejs.org |
+| pnpm >= 10 | Package management | `npm install -g pnpm` |
 | ffmpeg | Video thumbnails | `apt install ffmpeg` / `brew install ffmpeg` |
 | 7z | Archive extraction | `apt install p7zip-full` / `brew install p7zip` |
 | mpv | "Open with mpv" | `apt install mpv` / `brew install mpv` |
@@ -31,7 +31,7 @@ Optional: Nix (supports `direnv` with flake.nix for dev shell).
 pnpm install
 
 # Configure environment
-cp .env.example .env   # (create one from the template below)
+cp .env.example .env
 ```
 
 ### Environment Variables
@@ -42,17 +42,44 @@ cp .env.example .env   # (create one from the template below)
 | `PORT` | `3000` | Server port |
 | `DATA_DIR` | `./data` | SQLite database directory |
 | `BASE_URL` | `http://localhost:3000` | Public-facing server URL |
-| `NODE_ENV` | - | Set to `production` in production, `demo` for demo mode |
-| `ORIGIN` | `http://localhost:3000` | Allowed CORS origin (production) |
+| `ORIGIN` | value of `BASE_URL` | Allowed CORS origin (production) |
+| `BETTER_AUTH_SECRET` | — (required) | Session signing secret. Generate with `openssl rand -base64 32` |
+| `NODE_ENV` | — | `production` in production, `demo` for read-only demo mode |
 
 Example `.env`:
 
 ```
-ROOT=/host
+ROOT=/path/to/your/files
 PORT=3000
 BASE_URL=http://localhost:3000
+ORIGIN=http://localhost:3000
 DATA_DIR=./data
+BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+NODE_ENV=development
 ```
+
+A plain `KEY=VALUE` file is all you need — the server loads `.env`
+automatically on boot (both `pnpm dev` and `pnpm start`). dotenvx
+encryption is optional: if `.env` contains a `DOTENV_PUBLIC_KEY`, it is
+decrypted via dotenvx instead, which needs `.env.keys` alongside it
+(`.env.keys` is gitignored — never commit it).
+
+## First run
+
+1. Start the server (`pnpm dev` or `pnpm build && pnpm start`).
+2. Open the app — the setup screen asks you to create the admin account.
+3. After setup, open Settings → Administration to **disable sign-up** (otherwise anyone who can reach the server can create a full-access account).
+
+TagStudio is single-admin by design: every authenticated account has full
+read/write access to `ROOT`. Only expose it to the network if sign-up is
+disabled (or keep it on localhost).
+
+### Guest read-only access
+
+Settings → Administration → **Allow guest read-only access**. Visitors land
+directly in a read-only view (browse, preview, search) without logging in;
+a Login button stays in the header for the admin. Text-file contents,
+archive listings, and all edits stay admin-only.
 
 ## Development
 
@@ -76,6 +103,29 @@ pnpm start
 ```
 
 The server serves the built client SPA and the API on the same port.
+
+### Docker
+
+```bash
+export BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+docker compose up --build
+```
+
+The compose setup mounts `./data` (database) and `$HOME` (browsable files
+as `/host`, i.e. `ROOT=/host`). Override with env vars, e.g.
+`ROOT=/media` with an extra volume mount.
+
+> If you previously used a `BETTER_AUTH_SECRET` that was committed to git
+> history, generate a fresh one — old sessions will be invalidated.
+
+## Demo mode
+
+```bash
+NODE_ENV=demo pnpm dev:server
+```
+
+Serves the bundled `./demo` folder read-only with auth bypassed. Used for
+the public demo site.
 
 ## Tests
 

@@ -10,7 +10,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.message || body.error || `HTTP ${res.status}`);
+    const err = new Error(body.message || body.error || `HTTP ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -115,19 +117,19 @@ export function useApi() {
         method: "POST",
         body: JSON.stringify({ parentPath, name }),
       }),
-    createFile: (parentPath: string, name: string) =>
+    createFile: (parentPath: string, name: string, overwrite?: boolean) =>
       request<{ path: string }>("/files/create-file", {
         method: "POST",
-        body: JSON.stringify({ parentPath, name }),
+        body: JSON.stringify({ parentPath, name, overwrite: overwrite ?? false }),
       }),
     deleteFile: (path: string) =>
       request<{ success: boolean }>(`/files/delete?path=${encodeURIComponent(path)}`, {
         method: "DELETE",
       }),
-    renameFile: (filePath: string, name: string) =>
+    renameFile: (filePath: string, name: string, overwrite?: boolean) =>
       request<{ path: string }>("/files/rename", {
         method: "POST",
-        body: JSON.stringify({ path: filePath, name }),
+        body: JSON.stringify({ path: filePath, name, overwrite: overwrite ?? false }),
       }),
     moveFile: (sourcePath: string, destinationPath: string) =>
       request<{ success: boolean }>("/files/move", {

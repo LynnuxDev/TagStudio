@@ -25,11 +25,13 @@ export default function SearchBar({ onSearchResult, onClearSearch, isSearching, 
   const [extensions, setExtensions] = useState<string[]>([])
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
-  const [extOpen, setExtOpen] = useState(false)
 
   const [allTags, setAllTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [showTagDropdown, setShowTagDropdown] = useState(false)
+
+  const [extInput, setExtInput] = useState('')
+  const [showExtDropdown, setShowExtDropdown] = useState(false)
 
   const { search, getTags } = useApiContext()
   const extRef = useRef<HTMLDivElement>(null)
@@ -50,16 +52,24 @@ export default function SearchBar({ onSearchResult, onClearSearch, isSearching, 
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (extRef.current && !extRef.current.contains(e.target as Node)) setExtOpen(false)
+      if (extRef.current && !extRef.current.contains(e.target as Node)) setShowExtDropdown(false)
       if (tagDropRef.current && !tagDropRef.current.contains(e.target as Node)) setShowTagDropdown(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const normalizeExt = (raw: string) => {
+    const trimmed = raw.trim().toLowerCase()
+    if (!trimmed) return ''
+    return trimmed.startsWith('.') ? trimmed : `.${trimmed}`
+  }
+
   const toggleExt = (ext: string) => {
+    const normalized = normalizeExt(ext)
+    if (!normalized) return
     setExtensions(prev =>
-      prev.includes(ext) ? prev.filter(e => e !== ext) : [...prev, ext],
+      prev.includes(normalized) ? prev.filter(e => e !== normalized) : [...prev, normalized],
     )
   }
 
@@ -98,12 +108,27 @@ export default function SearchBar({ onSearchResult, onClearSearch, isSearching, 
     setExtensions([])
     setFilterTags([])
     setTagInput('')
+    setExtInput('')
+    setShowExtDropdown(false)
     onClearSearch()
   }
 
   const filteredTagOptions = allTags.filter(t =>
     !filterTags.includes(t) && t.includes(tagInput.toLowerCase()),
   )
+
+  const filteredExtOptions = COMMON_EXTENSIONS.filter(ext =>
+    !extensions.includes(ext) && ext.includes(extInput.trim().toLowerCase()),
+  )
+
+  const commitExtInput = () => {
+    const normalized = normalizeExt(extInput)
+    if (!normalized) return
+    if (!extensions.includes(normalized)) {
+      setExtensions(prev => [...prev, normalized])
+    }
+    setExtInput('')
+  }
 
   return (
     <div className="search-container">
@@ -131,26 +156,43 @@ export default function SearchBar({ onSearchResult, onClearSearch, isSearching, 
       {showFilters && (
         <div className="filter-panel">
           <div className="filter-row">
-            <div className="filter-field" ref={extRef}>
+            <div className="filter-field tag-filter-field" ref={extRef}>
               <label>Extensions</label>
-              <div className="ext-dropdown-trigger" onClick={() => setExtOpen(!extOpen)}>
-                {extensions.length > 0 ? `${extensions.length} selected` : 'All types'}
-                <span className="dropdown-arrow">▼</span>
-              </div>
-              {extOpen && (
-                <div className="ext-dropdown">
-                  {COMMON_EXTENSIONS.map(ext => (
-                    <label key={ext} className="ext-option">
-                      <input
-                        type="checkbox"
-                        checked={extensions.includes(ext)}
-                        onChange={() => toggleExt(ext)}
-                      />
-                      {ext}
-                    </label>
+              {extensions.length > 0 && (
+                <div className="filter-tags-list">
+                  {extensions.map(ext => (
+                    <span key={ext} className="filter-tag-badge" onClick={() => toggleExt(ext)}>
+                      {ext} &times;
+                    </span>
                   ))}
                 </div>
               )}
+              <div className="filter-tag-input-wrap">
+                <input
+                  type="text"
+                  placeholder="Add extension..."
+                  value={extInput}
+                  onChange={e => { setExtInput(e.target.value); setShowExtDropdown(true) }}
+                  onFocus={() => setShowExtDropdown(true)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      commitExtInput()
+                    } else if (e.key === 'Escape') {
+                      setShowExtDropdown(false)
+                    }
+                  }}
+                />
+                {showExtDropdown && filteredExtOptions.length > 0 && (
+                  <div className="tag-dropdown">
+                    {filteredExtOptions.map(ext => (
+                      <div key={ext} className="tag-dropdown-item" onMouseDown={e => e.preventDefault()} onClick={() => { toggleExt(ext); setExtInput('') }}>
+                        {ext}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="filter-field tag-filter-field">

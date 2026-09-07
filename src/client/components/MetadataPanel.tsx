@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import type { FileEntry, MetadataResponse } from '../types'
 import type { InfoRow } from '../fileInfoProviders'
 import { getExtraRows } from '../fileInfoProviders'
 import { isAudioEntry, isImageEntry, isTextEntry, isVideoEntry } from '../utils/media'
+import { getCodeLanguage, highlightToNodes } from '../utils/highlight'
 import { useApiContext } from '../hooks/ApiContext'
 
 interface MetadataPanelProps {
@@ -284,6 +285,16 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia, readOnl
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [lightbox, onNavigateMedia])
+
+  // NOTE: hooks must stay above the `if (!file)` early return — adding any
+  // hook below it changes the hook count once a file is selected and React
+  // unmounts the whole app ("rendered more hooks than during previous render").
+  const codeLang = file ? getCodeLanguage(file.name) : 'text'
+  const highlighted = useMemo(
+    () => (textContent !== null && file ? highlightToNodes(textContent, file.name) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [textContent, file?.path],
+  )
 
   if (!file) {
     return <div className="metadata-panel empty">Select a file to view metadata</div>
@@ -585,19 +596,35 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia, readOnl
             <div className="archive-error">{textError}</div>
           ) : textContent !== null ? (
             <div className="text-editor">
-              <textarea
-                className="text-editor-input"
-                value={textDraft ?? textContent}
-                onChange={(e) => setTextDraft(e.target.value)}
-                spellCheck={false}
-              />
               <div className="text-editor-bar">
-                {textDraft !== null && (
-                  <button className="text-editor-save" onClick={handleSaveText} disabled={textSaving}>
-                    {textSaving ? 'Saving...' : 'Save'}
-                  </button>
+                <span className="code-lang">{codeLang}</span>
+                {textDraft === null ? (
+                  !readOnly && (
+                    <button className="text-editor-edit" onClick={() => setTextDraft(textContent)}>
+                      Edit
+                    </button>
+                  )
+                ) : (
+                  <span className="text-editor-actions">
+                    <button className="text-editor-save" onClick={handleSaveText} disabled={textSaving}>
+                      {textSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button className="text-editor-cancel" onClick={() => setTextDraft(null)}>
+                      Cancel
+                    </button>
+                  </span>
                 )}
               </div>
+              {textDraft !== null ? (
+                <textarea
+                  className="text-editor-input"
+                  value={textDraft}
+                  onChange={(e) => setTextDraft(e.target.value)}
+                  spellCheck={false}
+                />
+              ) : (
+                <pre className="code-view"><code>{highlighted}</code></pre>
+              )}
             </div>
           ) : null}
         </div>
@@ -729,7 +756,21 @@ export default function MetadataPanel({ file, onUpdate, onNavigateMedia, readOnl
       )}
 
       {lightbox && (
-        <div className="lightbox-overlay" onClick={(e) => {
+        <div className="lightbox-overlay" onMouseDown={(e) => {
+          // XBUTTON1/XBUTTON2 side buttons flip through media here instead
+          // of navigating folders (stopPropagation keeps App's global
+          // back/forward handler from firing on top).
+          if (e.button === 3) {
+            e.preventDefault()
+            e.stopPropagation()
+            onNavigateMedia?.(-1)
+          } else if (e.button === 4) {
+            e.preventDefault()
+            e.stopPropagation()
+            onNavigateMedia?.(1)
+          }
+        }} onClick={(e) => {
+          if (e.button !== 0) return
           const rect = e.currentTarget.getBoundingClientRect()
           const x = e.clientX - rect.left
           if (x < rect.width / 3) onNavigateMedia?.(-1)

@@ -46,6 +46,7 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
   const [sortDir, setSortDir] = useState<1 | -1>(() => getCookie('sortDir') === 'desc' ? -1 : 1)
   const [createName, setCreateName] = useState('')
   const [createMode, setCreateMode] = useState<'folder' | 'file' | null>(null)
+  const [createConflict, setCreateConflict] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const lastRevealedRef = useRef<string | null>(null)
@@ -53,6 +54,7 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
   const lastClickIndex = useRef<number | null>(null)
 
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null)
+  const [renameConflict, setRenameConflict] = useState<string | null>(null)
 
   const [moveModal, setMoveModal] = useState<{ entries: FileEntry[]; browserPath: string } | null>(null)
   const [moveBrowserDirs, setMoveBrowserDirs] = useState<FileEntry[]>([])
@@ -96,8 +98,8 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (createMode) { setCreateMode(null); setCreateName('') }
-      else if (renameTarget) setRenameTarget(null)
+      if (createMode) { setCreateMode(null); setCreateName(''); setCreateConflict(null) }
+      else if (renameTarget) { setRenameTarget(null); setRenameConflict(null) }
       else if (confirmDelete) setConfirmDelete(null)
       else if (moveModal) setMoveModal(null)
       else if (bulkTagOpen) { setBulkTagOpen(false); setBulkTagInput('') }
@@ -170,30 +172,39 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
     if (entry && !entry.isDirectory && entry.path !== selectedPath) onSelectFile(entry)
   }
 
-  const handleCreate = async () => {
+  const handleCreate = async (overwrite = false) => {
     if (!createName.trim()) return
     const parent = contextMenu.entry?.isDirectory ? contextMenu.entry.path : listing?.path
     if (!parent) return
+    const name = createName.trim()
     try {
-      if (createMode === 'folder') await createFolder(parent, createName.trim())
-      else await createFile(parent, createName.trim())
-      showToast(createMode === 'folder' ? 'Folder created' : 'File created')
+      if (createMode === 'folder') await createFolder(parent, name)
+      else await createFile(parent, name, overwrite)
+      showToast(createMode === 'folder' ? 'Folder created' : overwrite ? 'File replaced' : 'File created')
       setCreateMode(null)
       setCreateName('')
+      setCreateConflict(null)
       setContextMenu(prev => ({ ...prev, visible: false }))
       fetchDir()
     } catch (err: any) {
+      // Name taken: stay in the dialog. Files offer Replace-with-empty,
+      // folders just show the error.
+      if (err?.status === 409 && !overwrite) {
+        setCreateConflict(name)
+        return
+      }
       showToast(err.message || 'Failed')
     }
   }
 
-  const handleRename = async (name: string) => {
+  const handleRename = async (name: string, overwrite = false) => {
     if (!renameTarget || !name.trim()) return
     const wasSelected = renameTarget.path === selectedPath
     try {
-      const res = await renameFile(renameTarget.path, name.trim())
-      showToast('Renamed')
+      const res = await renameFile(renameTarget.path, name.trim(), overwrite)
+      showToast(overwrite ? 'Replaced' : 'Renamed')
       setRenameTarget(null)
+      setRenameConflict(null)
       if (wasSelected) {
         try {
           onSelectFile(await getFileInfo(res.path))
@@ -201,6 +212,11 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
       }
       fetchDir()
     } catch (err: any) {
+      // Name taken: stay in the dialog and offer Replace instead of a toast.
+      if (err?.status === 409 && !overwrite) {
+        setRenameConflict(name.trim())
+        return
+      }
       showToast(err.message || 'Failed to rename')
     }
   }
@@ -391,6 +407,7 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
             <div className="context-menu-sep" />
             <div className="context-menu-item" onClick={() => {
               setRenameTarget(contextMenu.entry)
+              setRenameConflict(null)
               setContextMenu(prev => ({ ...prev, visible: false }))
             }}>
               ✏️ Rename
@@ -489,7 +506,8 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
     return (
       <RenameDialog
         initial={renameTarget.name}
-        onCancel={() => setRenameTarget(null)}
+        conflict={renameConflict}
+        onCancel={() => { setRenameTarget(null); setRenameConflict(null) }}
         onSubmit={handleRename}
       />
     )
@@ -547,8 +565,11 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
 
   const renderCreatePrompt = () => {
     if (!createMode) return null
+    const trimmed = createName.trim()
+    const isConflict = !!createConflict && !!trimmed && createConflict === trimmed
+    const closeCreate = () => { setCreateMode(null); setCreateName(''); setCreateConflict(null) }
     return (
-      <div className="modal-overlay" onClick={() => { setCreateMode(null); setCreateName('') }}>
+      <div className="modal-overlay" onClick={closeCreate}>
         <div className="modal-confirm" onClick={(e) => e.stopPropagation()}>
           <h3>New {createMode === 'folder' ? 'Folder' : 'File'}</h3>
           <input
@@ -557,11 +578,20 @@ export default function FileList({ path, onNavigate, onSelectFile, selectedPath,
             placeholder={createMode === 'folder' ? 'Folder name' : 'File name'}
             value={createName}
             onChange={(e) => setCreateName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate(isConflict && createMode === 'file')}
           />
+          {isConflict && (
+            createMode === 'file'
+              ? <p className="modal-warning">“{createConflict}” already exists. Replace it with an empty file?</p>
+              : <p className="modal-warning">“{createConflict}” already exists.</p>
+          )}
           <div className="modal-actions">
-            <button className="modal-cancel" onClick={() => { setCreateMode(null); setCreateName('') }}>Cancel</button>
-            <button onClick={handleCreate}>Create</button>
+            <button className="modal-cancel" onClick={closeCreate}>Cancel</button>
+            {isConflict && createMode === 'file' ? (
+              <button className="modal-danger" onClick={() => handleCreate(true)}>Replace</button>
+            ) : (
+              <button onClick={() => handleCreate(false)}>Create</button>
+            )}
           </div>
         </div>
       </div>

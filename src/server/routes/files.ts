@@ -754,7 +754,7 @@ files.post('/create-folder', async (c) => {
 
   try {
     await fs.access(resolved)
-    return c.json({ error: 'Already exists' }, 409)
+    return c.json({ error: 'Already exists', conflict: name }, 409)
   } catch { /* doesn't exist, good */ }
 
   try {
@@ -767,9 +767,10 @@ files.post('/create-folder', async (c) => {
 
 files.post('/create-file', async (c) => {
   if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
-  const body = await c.req.json() as { parentPath?: string; name?: string }
+  const body = await c.req.json() as { parentPath?: string; name?: string; overwrite?: boolean }
   const parentPath = body.parentPath
   const name = body.name
+  const overwrite = body.overwrite === true
   if (!parentPath || !name) return c.json({ error: 'parentPath and name required' }, 400)
 
   const resolved = path.resolve(parentPath, name)
@@ -777,8 +778,27 @@ files.post('/create-file', async (c) => {
 
   try {
     await fs.access(resolved)
-    return c.json({ error: 'Already exists' }, 409)
-  } catch { /* doesn't exist, good */ }
+    if (!overwrite) return c.json({ error: 'Already exists', conflict: name }, 409)
+    // Explicit replace with an empty file: files only, never folders.
+    // Cached metadata/thumbs are keyed by path and must go first.
+    const dstStat = await fs.lstat(resolved).catch(() => null)
+    if (!dstStat || dstStat.isDirectory()) return c.json({ error: 'Cannot replace a folder' }, 409)
+    try {
+      const canonDst = await canonicalPath(resolved)
+      for (const k of new Set([canonDst, resolved])) {
+        db.prepare('DELETE FROM file_metadata WHERE path = ?').run(k)
+      }
+      const { thumbPath: dstThumb } = thumbPathForCanonical(canonDst)
+      await fs.rm(dstThumb, { force: true }).catch(() => {})
+      await fs.rm(remuxPathForCanonical(canonDst), { force: true }).catch(() => {})
+      await fs.rm(resolved, { force: true })
+    } catch (err: any) {
+      return c.json({ error: err.message || 'Failed to replace file' }, 500)
+    }
+  } catch (err: any) {
+    // fs.access threw = doesn't exist, good. Anything else is a real error.
+    if (err?.code !== 'ENOENT') return c.json({ error: err.message || 'Failed to create file' }, 500)
+  }
 
   try {
     await fs.writeFile(resolved, '', 'utf-8')
@@ -790,9 +810,10 @@ files.post('/create-file', async (c) => {
 
 files.post('/rename', async (c) => {
   if (readonly) return c.json({ error: "This action is not available in the demo" }, 403)
-  const body = await c.req.json() as { path?: string; name?: string }
+  const body = await c.req.json() as { path?: string; name?: string; overwrite?: boolean }
   const filePath = body.path
   const newName = body.name
+  const overwrite = body.overwrite === true
   if (!filePath || !newName) return c.json({ error: 'path and name required' }, 400)
   if (newName.includes('/') || newName.includes('\\')) return c.json({ error: 'Invalid name' }, 400)
 
@@ -808,7 +829,34 @@ files.post('/rename', async (c) => {
   }
 
   const newPath = path.join(path.dirname(resolved), newName)
-  if (existsSync(newPath)) return c.json({ error: 'Destination already exists' }, 409)
+  if (existsSync(newPath)) {
+    if (!overwrite) return c.json({ error: 'Destination already exists', conflict: newName }, 409)
+    // Explicit replace: files only, never directories. Metadata, thumbnails
+    // and remux caches are keyed by path, so the replaced file's rows must
+    // go — otherwise its tags/thumbnail would haunt the new file.
+    const [srcStat, dstStat] = await Promise.all([
+      fs.lstat(resolved).catch(() => null),
+      fs.lstat(newPath).catch(() => null),
+    ])
+    const sameFile = !!srcStat && !!dstStat &&
+      (srcStat as any).ino === (dstStat as any).ino && (srcStat as any).dev === (dstStat as any).dev
+    if (!sameFile) {
+      if (!dstStat || dstStat.isDirectory()) return c.json({ error: 'Cannot replace a folder' }, 409)
+      if (!srcStat || srcStat.isDirectory()) return c.json({ error: 'Cannot replace with a folder' }, 409)
+      try {
+        const canonDst = await canonicalPath(newPath)
+        for (const k of new Set([canonDst, newPath])) {
+          db.prepare('DELETE FROM file_metadata WHERE path = ?').run(k)
+        }
+        const { thumbPath: dstThumb } = thumbPathForCanonical(canonDst)
+        await fs.rm(dstThumb, { force: true }).catch(() => {})
+        await fs.rm(remuxPathForCanonical(canonDst), { force: true }).catch(() => {})
+        await fs.rm(newPath, { force: true })
+      } catch (err: any) {
+        return c.json({ error: err.message || 'Failed to replace file' }, 500)
+      }
+    }
+  }
 
   // Snapshot link/canonical identity before renaming: tags live under the
   // canonical path so they survive access via symlinked dirs.

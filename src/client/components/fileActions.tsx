@@ -62,16 +62,20 @@ export function CopyLocationSubmenu({ path, root, fullPath, showToast, onDone }:
 
 interface RenameDialogProps {
   initial: string
+  /** Name that already exists (from a 409) — offers Replace instead of Rename. */
+  conflict?: string | null
   onCancel: () => void
-  onSubmit: (name: string) => void
+  onSubmit: (name: string, overwrite: boolean) => void
 }
 
-export function RenameDialog({ initial, onCancel, onSubmit }: RenameDialogProps) {
+export function RenameDialog({ initial, conflict, onCancel, onSubmit }: RenameDialogProps) {
   const [name, setName] = useState(initial)
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { inputRef.current?.focus() }, [])
-  const submit = () => {
-    if (name.trim()) onSubmit(name.trim())
+  const trimmed = name.trim()
+  const isConflict = !!conflict && !!trimmed && conflict === trimmed
+  const submit = (overwrite: boolean) => {
+    if (trimmed) onSubmit(trimmed, overwrite)
   }
   return (
     <div className="modal-overlay" onClick={onCancel}>
@@ -83,11 +87,18 @@ export function RenameDialog({ initial, onCancel, onSubmit }: RenameDialogProps)
           placeholder="New name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          onKeyDown={(e) => e.key === 'Enter' && submit(isConflict)}
         />
+        {isConflict && (
+          <p className="modal-warning">“{conflict}” already exists. Replace it?</p>
+        )}
         <div className="modal-actions">
           <button className="modal-cancel" onClick={onCancel}>Cancel</button>
-          <button onClick={submit}>Rename</button>
+          {isConflict ? (
+            <button className="modal-danger" onClick={() => submit(true)}>Replace</button>
+          ) : (
+            <button onClick={() => submit(false)}>Rename</button>
+          )}
         </div>
       </div>
     </div>
